@@ -4,6 +4,12 @@
   "idf.flashType": "UART",
   "idf.adapterTargetName": "esp32",
   "files.associations": {
-    "gpio_led.h": "c"
+    "gpio_led.h": "c",
+    "esp_vfs_eventfd.h": "c",
+    "uart.h": "c",
+    "esp_intr_alloc.h": "c",
+    "soc.h": "c",
+    "interrupts.h": "c",
+    "soc_caps.h": "c"
   }
 }

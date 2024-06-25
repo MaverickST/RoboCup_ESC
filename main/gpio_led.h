@@ -84,13 +84,7 @@ static inline void led_turn_color(led_rgb_t *led, uint8_t color)
  * @param color 
  * @param time in microseconds
  */
-static inline void led_setup_timer(led_rgb_t *led, uint8_t color, uint32_t time)
-{
-    led_turn_color(led, color);
-    led->color = color;
-    led->state = true;
-    ESP_ERROR_CHECK(esp_timer_start_once(led->oneshot_timer, time));
-}
+void led_setup_timer(led_rgb_t *led, uint8_t color, uint32_t time);
 
 /**
  * @brief Configure the RGB LED: turn on the LED, set the color to red and set the alarm
