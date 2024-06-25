@@ -1,2 +1,3 @@
-idf_component_register(SRCS "main.c"
-                    INCLUDE_DIRS ".")
+idf_component_register(SRCS "gpio_led.c" "main.c"
+                    INCLUDE_DIRS "."
+                    )
