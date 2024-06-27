@@ -10,6 +10,12 @@
     "esp_intr_alloc.h": "c",
     "soc.h": "c",
     "interrupts.h": "c",
-    "soc_caps.h": "c"
+    "soc_caps.h": "c",
+    "task.h": "c",
+    "stdio.h": "c",
+    "stdlib.h": "c",
+    "uart_console.h": "c",
+    "idf_additions.h": "c",
+    "queue.h": "c"
   }
 }
