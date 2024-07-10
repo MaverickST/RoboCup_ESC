@@ -1,3 +1,3 @@
-idf_component_register(SRCS "uart_console.c" "gpio_led.c" "main.c"
+idf_component_register(SRCS "bldc_pwm.c" "led.c" "uart_console.c" "main.c"
                     INCLUDE_DIRS "."
                     )

@@ -1,5 +1,5 @@
 /**
- * \file        gpio_led.h
+ * \file        led.h
  * \brief
  * \details
  * \author      MaverickST
@@ -8,8 +8,8 @@
  * \copyright   Unlicensed
  */
 
-#ifndef __GPIO_LED_H__
-#define __GPIO_LED_H__
+#ifndef __LED_H__
+#define __LED_H__
 
 #include <stdint.h>
 #include <stdbool.h>
