@@ -23,5 +23,8 @@
     "queue.h": "c",
     "esp_mac.h": "c",
     "esp_timer.h": "c"
-  }
+  },
+  "idf.openOcdConfigs": [
+    "board/esp32-wrover-kit-3.3v.cfg"
+  ]
 }
