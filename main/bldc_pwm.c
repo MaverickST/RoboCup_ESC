@@ -30,6 +30,7 @@ esp_err_t bldc_init(bldc_pwm_motor_t *motor, uint8_t pwm_gpio_num, uint32_t pwm_
     };
     mcpwm_new_timer(&timer_config, &motor->timer);
 
+    motor->operator = NULL;
     mcpwm_operator_config_t operator_config = {
         .group_id = group_id,
     };
@@ -37,12 +38,14 @@ esp_err_t bldc_init(bldc_pwm_motor_t *motor, uint8_t pwm_gpio_num, uint32_t pwm_
 
     mcpwm_operator_connect_timer(motor->operator, motor->timer);
 
+    motor->cmp = NULL;
     mcpwm_comparator_config_t comparator_config = {
         .flags.update_cmp_on_tez = true,
     };
     mcpwm_new_comparator(motor->operator, &comparator_config, &motor->cmp);
     mcpwm_comparator_set_compare_value(motor->cmp, 0);
 
+    motor->gen = NULL;
     mcpwm_generator_config_t generator_config = {
         .gen_gpio_num = pwm_gpio_num,
     };
@@ -75,10 +78,11 @@ esp_err_t bldc_disable(bldc_pwm_motor_t *motor)
 
 esp_err_t bldc_set_speed(bldc_pwm_motor_t *motor, uint32_t speed)
 {
-    if (speed > motor->max_speed_hz) {
+    uint32_t nw_cmp = speed*motor->max_speed_hz/1000;
+    if (nw_cmp > motor->max_speed_hz) {
         // ESP_LOGE(BLDC_TAG, "speed %d is greater than max speed %d", speed, motor->max_speed_hz);
         return ESP_FAIL;
     }
-    ESP_RETURN_ON_ERROR(mcpwm_comparator_set_compare_value(motor->cmp, speed), BLDC_TAG, "set compare value failed");
+    ESP_RETURN_ON_ERROR(mcpwm_comparator_set_compare_value(motor->cmp, nw_cmp), BLDC_TAG, "set compare value failed");
     return ESP_OK;
 }

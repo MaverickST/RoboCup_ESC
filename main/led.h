@@ -13,6 +13,7 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include "rtc.h"
 #include "driver/gpio.h"
 #include "esp_timer.h"
 #include "esp_log.h"
@@ -22,6 +23,7 @@ typedef struct
     uint8_t gpio_num;
     bool state;
     bool blink; ///< If true, the LED will blink. It has to be set before calling led_setup_timer
+    bool is_rgb; ///< If true, the LED is RGB
     uint8_t time_blink; ///< number of times the LED will blink
     uint8_t cnt_blink;  ///< counter of the number of times the LED has blinked
 
@@ -29,6 +31,7 @@ typedef struct
     uint8_t lsb_rgb;    ///< LSB of the RGB LED
     uint8_t color;      ///< Value of the RGB LED
     uint32_t time;      ///< Time (us) for the RGB LED
+    uint32_t tv_now;
     esp_timer_handle_t oneshot_timer;  ///< Timer for the RGB LED
 
 }led_rgb_t;
@@ -40,7 +43,7 @@ typedef struct
  * @param lsb_rgb or the GPIO number for a single LED
  * @param time in microseconds
  */
-void led_init(led_rgb_t *led, uint8_t lsb_rgb, uint32_t time);
+void led_init(led_rgb_t *led, uint8_t lsb_rgb, uint32_t time, bool is_rgb);
 
 /**
  * @brief Callback function for the RGB LED.

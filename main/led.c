@@ -12,7 +12,7 @@
 
 static const char* TAG_led = "led: ";
 
-void led_init(led_rgb_t *led, uint8_t lsb_rgb, uint32_t time)
+void led_init(led_rgb_t *led, uint8_t lsb_rgb, uint32_t time, bool is_rgb)
 {
     led->gpio_num = lsb_rgb;
     led->lsb_rgb = lsb_rgb;
@@ -26,7 +26,7 @@ void led_init(led_rgb_t *led, uint8_t lsb_rgb, uint32_t time)
     gpio_config_t io_conf = {
         .intr_type = GPIO_INTR_DISABLE,
         .mode = GPIO_MODE_OUTPUT,
-        .pin_bit_mask = (7ULL << led->lsb_rgb),
+        .pin_bit_mask = is_rgb? (7ULL << led->lsb_rgb): (1ULL << led->gpio_num),
         .pull_down_en = 0,
         .pull_up_en = 0,
     };
@@ -38,11 +38,12 @@ void led_timer_callback(void *arg)
 {
     led_rgb_t *led = (led_rgb_t *)arg;
     led->state = !led->state;
-    ESP_LOGI(TAG_led, "led_timer_callback: %d  color: %02x", led->state, led->color);
+    ESP_LOGI(TAG_led, "led_timer_callback: %d  color: %02x  time: %d", led->state, led->color, (int)(esp_rtc_get_time_us() - led->tv_now));
     if (led->state) {
         led->cnt_blink++;
         led_turn_color(led, led->color);
     }else{
+        ESP_LOGI(TAG_led, "led_timer_callback: turn off");
         led_turn_color(led, 0x00);
         if (!led->blink) ESP_ERROR_CHECK(esp_timer_delete(led->oneshot_timer));
     }
@@ -76,5 +77,7 @@ void led_setup_timer(led_rgb_t *led, uint8_t color, uint32_t time)
     ESP_ERROR_CHECK(esp_timer_create(&oneshot_timer_args, &oneshot_timer));
     led->oneshot_timer = oneshot_timer;
 
+    led->tv_now = esp_rtc_get_time_us();
+    ESP_LOGI(TAG_led, "led_setup_timer: %d", (int)led->tv_now);
     ESP_ERROR_CHECK(esp_timer_start_once(led->oneshot_timer, time));
 }

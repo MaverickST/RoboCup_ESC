@@ -18,23 +18,16 @@
 #include "driver/uart.h"
 #include "hal/uart_types.h"
 #include "hal/uart_hal.h"
-
+#include "freertos/queue.h"
 #include "types.h"
 
-
-#define UART_NUM        0
-/* Notice that ESP32 has to use the iomux input to configure uart as wakeup source
- * Please use 'UxRXD_GPIO_NUM' as uart rx pin. No limitation to the other target */
-#define UART_TX_IO_NUM  U0TXD_GPIO_NUM
-#define UART_RX_IO_NUM  U0RXD_GPIO_NUM
-
-#define UART_WAKEUP_THRESHOLD   2
+#define PATTERN_CHR_NUM    (3)  /*!< Set the number of consecutive and identical characters received 
+                                     by receiver which defines a UART pattern*/
 
 #define READ_BUF_SIZE   128
 #define UART_BUF_SIZE   (READ_BUF_SIZE * 2)
 
-// static QueueHandle_t uart_evt_que = NULL;
-
+static const char* TAG_UART = "uart_console";
 
 /**
  * @brief Structure to handle the UART console.
@@ -46,6 +39,7 @@ typedef struct
     uint8_t *data;
     uint16_t len;
     uint8_t uart_num;
+    QueueHandle_t uart_queue;
 
 }uart_console_t;
 
@@ -54,7 +48,7 @@ typedef struct
  * @brief Initialize the UART console
  * 
  */
-void uconsole_init(uart_console_t *uc);
+void uconsole_init(uart_console_t *uc, uint8_t uart_num);
 
 /**
  * @brief Read the data from the UART console

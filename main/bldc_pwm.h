@@ -68,7 +68,7 @@ esp_err_t bldc_disable(bldc_pwm_motor_t *motor);
  * @brief Set the speed of the motor
  * 
  * @param motor instance of the motor
- * @param speed 
+ * @param speed range from 0 to 1000, where 0 is stopped and 1000 is maximum speed
  */
 esp_err_t bldc_set_speed(bldc_pwm_motor_t *motor, uint32_t speed);
 
