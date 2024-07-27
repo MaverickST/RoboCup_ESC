@@ -27,7 +27,7 @@
 #define READ_BUF_SIZE   128
 #define UART_BUF_SIZE   (READ_BUF_SIZE * 2)
 
-static const char* TAG_UART = "uart_console";
+// static const char* TAG_UART = "uart_console";
 
 /**
  * @brief Structure to handle the UART console.

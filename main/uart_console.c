@@ -20,7 +20,7 @@ void uconsole_init(uart_console_t *uc, uint8_t uart_num)
     ESP_ERROR_CHECK(uart_param_config(uc->uart_num, &uart_config));
 
     //Set UART log level
-    esp_log_level_set(TAG_UART, ESP_LOG_INFO);
+    // esp_log_level_set(TAG_UART, ESP_LOG_INFO);
     //Set UART pins (using UART0 default pins ie no changes.)
     uart_set_pin(uart_num, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE);
 
@@ -32,7 +32,7 @@ void uconsole_init(uart_console_t *uc, uint8_t uart_num)
     uc->data = (uint8_t *)malloc(READ_BUF_SIZE);
     if (uc->data == NULL)
     {
-        ESP_LOGE(TAG_UART, "Failed to allocate memory for UART data buffer");
+        // ESP_LOGE(TAG_UART, "Failed to allocate memory for UART data buffer");
         return;
     }
 }

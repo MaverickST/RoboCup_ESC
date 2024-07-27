@@ -23,7 +23,9 @@
     "queue.h": "c",
     "esp_mac.h": "c",
     "esp_timer.h": "c",
-    "uart_hal.h": "c"
+    "uart_hal.h": "c",
+    "*.inc": "c",
+    "i2c_master.h": "c"
   },
   "idf.openOcdConfigs": [
     "interface/ftdi/esp32_devkitj_v1.cfg",
