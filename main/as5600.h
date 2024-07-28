@@ -23,14 +23,18 @@
 
 #include "as5600_types.h"
 
+static const char* TAG_AS5600 = "AS5600";
+
 #define I2C_MASTER_FREQ_HZ 100*1000 /*!< I2C master clock frequency */
 #define AS5600_SENSOR_ADDR  0x36    /*!< slave address for AS5600 sensor */
-#define WRITE_BIT I2C_MASTER_WRITE              /*!< I2C master write */
-#define READ_BIT I2C_MASTER_READ                /*!< I2C master read */
-#define ACK_CHECK_EN 0x1                        /*!< I2C master will check ack from slave*/
-#define ACK_CHECK_DIS 0x0                       /*!< I2C master will not check ack from slave */
-#define ACK_VAL 0x0                             /*!< I2C ack value */
-#define NACK_VAL 0x1                            /*!< I2C nack value */
+#define I2C_TIMEOUT_MS 100         /*!< I2C timeout in milliseconds */
+
+// #define WRITE_BIT I2C_MASTER_WRITE              /*!< I2C master write */
+// #define READ_BIT I2C_MASTER_READ                /*!< I2C master read */
+// #define ACK_CHECK_EN 0x1                        /*!< I2C master will check ack from slave*/
+// #define ACK_CHECK_DIS 0x0                       /*!< I2C master will not check ack from slave */
+// #define ACK_VAL 0x0                             /*!< I2C ack value */
+// #define NACK_VAL 0x1                            /*!< I2C nack value */
 
 typedef struct
 {
@@ -39,7 +43,6 @@ typedef struct
     uint8_t sda;
 
     i2c_master_dev_handle_t dev_handle;
-
     as5600_reg_t reg;
 
 } as5600_t;
@@ -80,13 +83,22 @@ void as5600_read_reg(as5600_t *as5600, as5600_reg_t reg, uint16_t *data);
 void as5600_write_reg(as5600_t *as5600, as5600_reg_t reg, uint16_t data);
 
 /**
- * @brief Check if the register is valid
+ * @brief Check if the register is valid for reading
  * 
  * @param reg Register address
  * @return true if the register is valid
  * @return false if the register is invalid
  */
-bool as5600_is_valid_reg(as5600_t *as5600, as5600_reg_t reg);
+bool as5600_is_valid_read_reg(as5600_t *as5600, as5600_reg_t reg);
+
+/**
+ * @brief Check if the register is valid for writing
+ * 
+ * @param reg Register address
+ * @return true if the register is valid
+ * @return false if the register is invalid
+ */
+bool as5600_is_valid_write_reg(as5600_t *as5600, as5600_reg_t reg);
 
 /**
  * @brief Transmit and receive data.

@@ -59,43 +59,59 @@ void proccess_cmd(const char *cmd)
     }
     ///< Command to read the angle from the AS5600 sensor
     else if(strcmp(cmd, "as5") == 0){
-        if (len_uc_data < 9) { ///< 4 for the command "as5 " and 4 for the register
+        ///< Check the minimum length of the command
+        if (len_uc_data <= 8) { ///< 4 for the command "as5 " and 4 for the register
             ESP_LOGI(TAG_CMD, "Invalid AS5600 cmd");
             return;
         }
         ///< From cmd, get if it is read or write: "as5 r" or "as5 w"
         char rw = *(gUc.data + 4);
+
         ///< Then get the register to read or write: "as5 r zmco", "as5 w zpos", ....
         uint8_t len_reg = 4;
         char reg[len_reg]; ///< 4 is the length of the register, +1 for the null terminator
         strncpy(reg, (const char *)gUc.data + strlen("as5 r "), len_reg); ///< Get the register after the command
         reg[len_reg] = '\0'; ///< Add the null terminator
-
-        ESP_LOGI(TAG_CMD, "reg-> %s", reg);
-        as5600_reg_t addr = as5600_reg_str_to_addr(&gAs5600, reg);
+        as5600_reg_t addr = as5600_reg_str_to_addr(&gAs5600, reg); ///< Map the str to int address
         if (addr == -1) {
             ESP_LOGI(TAG_CMD, "Invalid register");
             return;
         }
-        ESP_LOGI(TAG_CMD, "addr-> %02x", (uint8_t)addr);
 
+        ///< Read or write the register
         uint16_t data;
         if (rw == 'r') {
+            ESP_LOGI(TAG_CMD, "addr-> %02x", (uint8_t)addr);
             as5600_read_reg(&gAs5600, addr, &data);
-            ESP_LOGI(TAG_CMD, "value-> %04x", data);
+            ESP_LOGI(TAG_CMD, "readed-> %03x", data);
         }
+        ///< For write commands, it is necessary to get the value to write
         else if (rw == 'w') {
+            ///< Check the minimum length of the command
             if (len_uc_data != 14) { ///< 4 for the command "as5 w [regi] [000]" and 2 for the register and 5 for the value
                 ESP_LOGI(TAG_CMD, "Invalid AS5600 cmd");
                 return;
             }
-            ///< Get the exadecimal value to write
+            ///< Get the exadecimal value from 3 characters
             uint8_t len_value = 3;
-            char str_value[len_value]; ///< 10 is the length of the command "as5 w [regi] "
+            char str_value[len_value]; ///< value to write in chars
             strncpy(str_value, (const char *)gUc.data + strlen("as5 w regi "), len_value); ///< Get the value after the command
-            uint16_t value = strtol(str_value, NULL, len_value);
-            // as5600_write_reg(&gAs5600, addr, value);
-            ESP_LOGI(TAG_CMD, "value-> %04x", value);
+            str_value[len_value] = '\0'; ///< Add the null terminator
+            uint16_t value = 0; ///< value to write in int
+            for (int i = 0; i < len_value; i++) {
+                if (str_value[i] >= '0' && str_value[i] <= '9') {
+                    value += (str_value[i] - '0') << (4 * (len_value - i - 1));
+                }
+                else if (str_value[i] >= 'a' && str_value[i] <= 'f') {
+                    value += (str_value[i] - 'a' + 10) << (4 * (len_value - i - 1));
+                }
+                else {
+                    ESP_LOGI(TAG_CMD, "Invalid value");
+                    return;
+                }
+            }
+            as5600_write_reg(&gAs5600, addr, value);
+            ESP_LOGI(TAG_CMD, "addr-> %02x, value-> %03x", (uint8_t)addr, value);
         }
         else {
             ESP_LOGI(TAG_CMD, "rw not recognized");
