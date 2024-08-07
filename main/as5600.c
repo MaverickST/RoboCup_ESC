@@ -1,11 +1,13 @@
 #include "as5600.h"
 
-void as5600_init(as5600_t *as5600, i2c_port_t i2c_num, uint8_t scl, uint8_t sda)
+void as5600_init(as5600_t *as5600, i2c_port_t i2c_num, uint8_t scl, uint8_t sda, uint8_t out)
 {
     as5600->i2c_num = i2c_num;
     as5600->scl = scl;
     as5600->sda = sda;
+    as5600->out = out;
 
+    // ------------- I2C master configuration ------------- //
     i2c_master_bus_config_t i2c_mst_config = {
         .clk_source = I2C_CLK_SRC_DEFAULT,
         .i2c_port = i2c_num,
@@ -27,6 +29,82 @@ void as5600_init(as5600_t *as5600, i2c_port_t i2c_num, uint8_t scl, uint8_t sda)
     static i2c_master_dev_handle_t dev_handle;
     ESP_ERROR_CHECK(i2c_master_bus_add_device(bus_handle, &dev_cfg, &dev_handle));
     as5600->dev_handle = dev_handle;
+
+    // ------------- ADC pin OUT configuration ------------- //
+    // The DIG ADC2 controller of ESP32-S3 doesn’t work properly (pag. 1444).
+    // So we need to use the ADC1 controller (GPIO-1 to GPIO-10, pag. 318).
+
+    // From GPIO to ADC channel
+    as5600->buffer[0] = 0;
+    memset(as5600->buffer, 0xcc, AS5600_ADC_READ_SIZE_BYTES);
+    as5600->unit = AS5600_ADC_CONF_UNIT;
+    ESP_ERROR_CHECK(adc_continuous_io_to_channel(as5600->out, &as5600->unit, &as5600->chan));
+    ESP_LOGI(TAG_AS5600, "ADC channel: %d", as5600->chan);
+
+    adc_continuous_handle_t handle = NULL;
+
+    adc_continuous_handle_cfg_t adc_config = {
+        .max_store_buf_size = AS5600_ADC_MAX_BUF_SIZE,
+        .conv_frame_size = AS5600_ADC_READ_SIZE_BYTES,
+    };
+    ESP_ERROR_CHECK(adc_continuous_new_handle(&adc_config, &handle));
+
+    adc_continuous_config_t dig_cfg = {
+        .sample_freq_hz = 20*AS5600_ADC_SAMPLE_FREQ_HZ,
+        .conv_mode = AS5600_ADC_CONV_MODE,
+        .format = AS5600_ADC_OUTPUT_TYPE,
+    };
+    dig_cfg.pattern_num = as5600->chan; // AS5600_ADC_CHANNEL_COUNT
+
+    // adc_digi_pattern_config_t adc_pattern[SOC_ADC_PATT_LEN_MAX] = {0};
+    // adc_pattern[0] = (adc_digi_pattern_config_t) {
+    //     .atten = AS5600_ADC_ATTEN,
+    //     .channel = as5600->chan,
+    //     .unit = AS5600_ADC_CONF_UNIT,
+    //     .bit_width = AS5600_ADC_BIT_WIDTH,
+    // };
+    adc_digi_pattern_config_t adc_pattern = {
+        .atten = AS5600_ADC_ATTEN,
+        .channel = as5600->chan,
+        .unit = AS5600_ADC_CONF_UNIT,
+        .bit_width = AS5600_ADC_BIT_WIDTH,
+    };
+    dig_cfg.adc_pattern = &adc_pattern;
+    ESP_ERROR_CHECK(adc_continuous_config(handle, &dig_cfg));
+    as5600->adc_cont_handle = handle;
+
+}
+
+void as5600_deinit(as5600_t *as5600)
+{
+    i2c_del_master_bus(as5600->dev_handle);
+    adc_oneshot_del_unit(as5600->adc_handle);
+    adc_continuous_deinit(as5600->adc_cont_handle);
+}
+
+static void oneshot_adc_config(as5600_t *as5600)
+{
+    adc_oneshot_unit_handle_t adc_handle;
+    adc_oneshot_unit_init_cfg_t init_config1 = {
+        .unit_id = AS5600_ADC_CONF_UNIT,
+    };
+    ESP_ERROR_CHECK(adc_oneshot_new_unit(&init_config1, &adc_handle));
+
+    // From GPIO to ADC channel
+    adc_oneshot_io_to_channel(as5600->out, AS5600_ADC_CONF_UNIT, &as5600->chan);
+
+    adc_oneshot_chan_cfg_t config = {
+        .bitwidth = ADC_BITWIDTH_DEFAULT,
+        .atten = ADC_ATTEN_DB_12,
+    };
+    ESP_ERROR_CHECK(adc_oneshot_config_channel(adc_handle, as5600->chan, &config));
+    as5600->adc_handle = adc_handle;
+}
+
+void as5600_get_out_value(as5600_t *as5600, uint16_t *out_value)
+{
+    adc_oneshot_read(as5600->adc_handle, as5600->chan, out_value);
+    *out_value = (*out_value * AS5600_ADC_RESOLUTION_12_BIT) / 360;
 }
 
 as5600_reg_t as5600_reg_str_to_addr(as5600_t *as5600, const char *reg_str)
@@ -177,15 +255,15 @@ void as5600_get_max_angle(as5600_t *as5600, uint16_t *max_angle)
 
 void as5600_set_conf(as5600_t *as5600, as5600_config_t conf)
 {
-    uint8_t write_buffer[] = {AS5600_REG_CONF_H, conf.data >> 8, conf.data};
+    uint8_t write_buffer[] = {AS5600_REG_CONF_H, conf.WORD >> 8, conf.WORD};
     i2c_master_transmit(as5600->dev_handle, write_buffer, 3, I2C_TIMEOUT_MS / portTICK_PERIOD_MS);
 }
 
 void as5600_get_conf(as5600_t *as5600, as5600_config_t *conf)
 {
     uint8_t write_buffer[] = {AS5600_REG_CONF_H};
-    i2c_master_transmit_receive(as5600->dev_handle, write_buffer, 1,(uint8_t *)&conf->data, 2, I2C_TIMEOUT_MS / portTICK_PERIOD_MS);
-    conf->data = (conf->data << 8) | (conf->data >> 8);
+    i2c_master_transmit_receive(as5600->dev_handle, write_buffer, 1,(uint8_t *)&conf->WORD, 2, I2C_TIMEOUT_MS / portTICK_PERIOD_MS);
+    conf->WORD = (conf->WORD << 8) | (conf->WORD >> 8);
 }
 
 // -------------------------------------------------------------

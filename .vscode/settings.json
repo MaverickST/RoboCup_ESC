@@ -38,7 +38,10 @@
     "regex": "c",
     "tuple": "c",
     "type_traits": "c",
-    "utility": "c"
+    "utility": "c",
+    "stdbool.h": "c",
+    "adc_cali.h": "c",
+    "esp_sleep.h": "c"
   },
   "idf.openOcdConfigs": [
     "interface/ftdi/esp32_devkitj_v1.cfg",

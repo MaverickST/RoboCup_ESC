@@ -16,6 +16,10 @@
 #include <stdlib.h>
 #include <string.h>
 #include "esp_log.h"
+#include "esp_adc/adc_continuous.h"
+#include "esp_adc/adc_oneshot.h"
+// #include "esp_adc/adc_cali.h"
+// #include "esp_adc/adc_cali_scheme.h"
 // #include "driver/i2c.h"
 #include "driver/i2c_master.h"
 #include "freertos/FreeRTOS.h"
@@ -25,22 +29,35 @@
 
 static const char* TAG_AS5600 = "AS5600";
 
-#define I2C_MASTER_FREQ_HZ 100*1000 /*!< I2C master clock frequency */
-#define AS5600_SENSOR_ADDR  0x36    /*!< slave address for AS5600 sensor */
-#define I2C_TIMEOUT_MS 100         /*!< I2C timeout in milliseconds */
+#define I2C_MASTER_FREQ_HZ  400*1000    /*!< I2C master clock frequency */
+#define I2C_TIMEOUT_MS      100         /*!< I2C timeout in milliseconds */
 
-// #define WRITE_BIT I2C_MASTER_WRITE              /*!< I2C master write */
-// #define READ_BIT I2C_MASTER_READ                /*!< I2C master read */
-// #define ACK_CHECK_EN 0x1                        /*!< I2C master will check ack from slave*/
-// #define ACK_CHECK_DIS 0x0                       /*!< I2C master will not check ack from slave */
-// #define ACK_VAL 0x0                             /*!< I2C ack value */
-// #define NACK_VAL 0x1                            /*!< I2C nack value */
+#define AS5600_SENSOR_ADDR  0x36        /*!< slave address for AS5600 sensor */
+
+#define AS5600_ADC_SAMPLE_FREQ_HZ      1000        /*!< ADC sample frequency in Hz */
+#define AS5600_ADC_CONF_UNIT           ADC_UNIT_1  /*!< ADC unit for ADC1 */
+#define AS5600_ADC_RESOLUTION_12_BIT   4095        /*!< 12-bit resolution for ADC */  
+#define AS5600_ADC_READ_SIZE_BYTES     128*SOC_ADC_DIGI_DATA_BYTES_PER_CONV   /*!< Read size in bytes */
+#define AS5600_ADC_MAX_BUF_SIZE        4*AS5600_ADC_READ_SIZE_BYTES                   /*!< Maximum buffer size for ADC */
+
+#define AS5600_ADC_CONV_MODE           ADC_CONV_SINGLE_UNIT_1
+#define AS5600_ADC_OUTPUT_TYPE         ADC_DIGI_OUTPUT_FORMAT_TYPE2
+#define AS5600_ADC_ATTEN               ADC_ATTEN_DB_0
+#define AS5600_ADC_BIT_WIDTH           CONFIG_SOC_ADC_DIGI_MIN_BITWIDTH
+#define AS5600_ADC_CHANNEL_COUNT       1
 
 typedef struct
 {
     i2c_port_t i2c_num;
     uint8_t scl;
     uint8_t sda;
+    uint8_t out;
+    uint8_t buffer[AS5600_ADC_READ_SIZE_BYTES];
+    uint32_t ret_num;
+    adc_channel_t chan;
+    adc_unit_t unit;
+    adc_oneshot_unit_handle_t adc_handle;
+    adc_continuous_handle_t adc_cont_handle;
 
     i2c_master_dev_handle_t dev_handle;
     as5600_reg_t reg;
@@ -52,7 +69,30 @@ typedef struct
  * 
  * @param i2c_num I2C port number
  */
-void as5600_init(as5600_t *as5600, i2c_port_t i2c_num, uint8_t scl, uint8_t sda);
+void as5600_init(as5600_t *as5600, i2c_port_t i2c_num, uint8_t scl, uint8_t sda, uint8_t out);
+
+/**
+ * @brief Deinitialize the I2C master driver
+ * 
+ */
+void as5600_deinit(as5600_t *as5600);
+
+/**
+ * @brief Get the output value from the AS5600 sensor by reading the ADC
+ * 
+ * @param out_value Output value
+ */
+void as5600_get_out_value(as5600_t *as5600, uint16_t *out_value);
+
+/**
+ * @brief Start the ADC conversion in continuous mode.
+ * 
+ * @param as5600 
+ */
+static inline void as5600_adc_continuous_start(as5600_t *as5600)
+{
+    adc_continuous_start(as5600->adc_cont_handle);
+}
 
 /**
  * @brief Convert register string to register address

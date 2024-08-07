@@ -10,7 +10,7 @@
 
 #include "led.h"
 
-static const char* TAG_led = "led: ";
+static const char* TAG_led = "led";
 
 void led_init(led_rgb_t *led, uint8_t lsb_rgb, uint32_t time, bool is_rgb)
 {
