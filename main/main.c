@@ -1,13 +1,14 @@
-#include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
-#include "sdkconfig.h"  
+#include <stdio.h>
+#include "sdkconfig.h"
+#include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/semphr.h"
-#include "esp_log.h"
-#include "esp_sleep.h"
-#include "esp_err.h"
+#include "esp_partition.h"
+#include "esp_flash.h"
+#include "esp_timer.h"
+// #include "driver/spi_common.h"
 
 #include "types.h"
 #include "led.h"
@@ -17,13 +18,14 @@
 
 #define I2C_MASTER_SCL_GPIO 4       /*!< gpio number for I2C master clock */
 #define I2C_MASTER_SDA_GPIO 5       /*!< gpio number for I2C master data  */
-#define AS5600_OUT_GPIO 6           /*!< gpio number for OUT signal */
+#define AS5600_OUT_GPIO 2           /*!< gpio number for OUT signal */
 #define I2C_MASTER_NUM 1            /*!< I2C port number for master dev */
 
 #define MOTOR_MCPWM_TIMER_RESOLUTION_HZ 100*1000 // 1MHz, 1 tick = 1us
 #define MOTOR_MCPWM_FREQ_HZ             50    // 50Hz PWM
 #define MOTOR_MCPWM_DUTY_TICK_MAX       (MOTOR_MCPWM_TIMER_RESOLUTION_HZ / MOTOR_MCPWM_FREQ_HZ) // maximum value we can set for the duty cycle, in ticks
 #define MOTOR_MCPWM_GPIO                3
+#define MOTOR_REVERSE_GPIO              8
 
 #define LED_TIME_US     2*1000*1000
 #define LED_LSB_GPIO    15
@@ -35,7 +37,8 @@ static const char* TAG_ADC_TASK = "adc_task";
 static const char* TAG_CMD = "cmd";
 
 static TaskHandle_t task_handle_adc;
-uint32_t generic_timer;
+uint32_t start_timer;
+uint32_t done_timer;
 
 volatile flags_t gFlag;
 led_rgb_t gLed;
@@ -56,6 +59,15 @@ as5600_t gAs5600;
  * @param user_data 
  */
 bool adc_conv_done_cb(adc_continuous_handle_t handle, const adc_continuous_evt_data_t *edata, void *user_data);
+
+/**
+ * @brief Callback for the ADC pool overflow
+ * 
+ * @param handle
+ * @param edata
+ * @param user_data
+ */
+bool adc_pool_overflow_cb(adc_continuous_handle_t handle, const adc_continuous_evt_data_t *edata, void *user_data);
 
 /**
  * @brief Proccess the command received from the UART console
@@ -94,7 +106,7 @@ void app_main(void)
     xTaskCreate(uart_event_task, "uart_event_task", 3*1024, NULL, 1, NULL);
 
     ///< BLDC motor initialization
-    bldc_init(&gMotor, MOTOR_MCPWM_GPIO, MOTOR_MCPWM_FREQ_HZ, 0, MOTOR_MCPWM_TIMER_RESOLUTION_HZ);
+    bldc_init(&gMotor, MOTOR_MCPWM_GPIO, MOTOR_REVERSE_GPIO, MOTOR_MCPWM_FREQ_HZ, 0, MOTOR_MCPWM_TIMER_RESOLUTION_HZ);
     bldc_enable(&gMotor);
     bldc_set_speed(&gMotor, 1);
 
@@ -114,12 +126,30 @@ void app_main(void)
 
     adc_continuous_evt_cbs_t cbs = {
         .on_conv_done = adc_conv_done_cb,
+        .on_pool_ovf = adc_pool_overflow_cb,
     };
     ESP_ERROR_CHECK(adc_continuous_register_event_callbacks(gAs5600.adc_cont_handle, &cbs, NULL));
-    generic_timer = esp_rtc_get_time_us();
-    // as5600_adc_continuous_start(&gAs5600);
+    start_timer = esp_rtc_get_time_us();
+    as5600_adc_continuous_start(&gAs5600);
     
-    xTaskCreate(adc_continuous_task, "adc_continuous_task", 2*1024, NULL, 3, &task_handle_adc); //configMAX_PRIORITIES
+    xTaskCreate(adc_continuous_task, "adc_continuous_task", 2*1024, NULL, 3, &task_handle_adc); // configMAX_PRIORITIES
+
+    ///< Flash (NVS) initialization
+    const esp_partition_t *part = esp_partition_find_first(ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_DATA_NVS, "angle_pos");
+
+    // spi_bus_initialize();
+    esp_flash_init(part->flash_chip);
+    
+    esp_flash_erase_region(part->flash_chip, part->address, part->size);
+
+    // uint8_t data[16] = {'H', 'e', 'l', 'l', 'o', 0x05, 0x06, 0x07,
+    //                     0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F};
+    uint8_t data[32] = "Hello, World! Whats up?";
+    esp_flash_write(part->flash_chip, data, part->address, sizeof(data));
+
+    uint8_t read_data[32];
+    esp_flash_read(part->flash_chip, read_data, part->address, sizeof(read_data));
+    ESP_LOGI("flash", "read_data-> %s", read_data);
     
 }
 
@@ -134,9 +164,14 @@ bool adc_conv_done_cb(adc_continuous_handle_t handle, const adc_continuous_evt_d
     vTaskNotifyGiveFromISR(task_handle_adc, &mustYield);
 
     // ESP_LOGI("adc_cb", "ADC continuous conversion done. Time: %d, yield: %d", (int)(esp_rtc_get_time_us() - generic_timer), (int)mustYield);
-    generic_timer = esp_rtc_get_time_us();
-    
+    done_timer = esp_rtc_get_time_us();
+
     return (mustYield == pdTRUE);
+}
+
+bool adc_pool_overflow_cb(adc_continuous_handle_t handle, const adc_continuous_evt_data_t *edata, void *user_data)
+{
+    return true;
 }
 
 void adc_continuous_task(void *pvParameters)
@@ -150,24 +185,17 @@ void adc_continuous_task(void *pvParameters)
             esp_err_t ret = adc_continuous_read(gAs5600.adc_cont_handle, gAs5600.buffer, AS5600_ADC_READ_SIZE_BYTES, &gAs5600.ret_num, 0);
             uint32_t ret_num = gAs5600.ret_num;
             if (ret == ESP_OK) {
-                ESP_LOGI(TAG_ADC_TASK, "ret is %x, ret_num is %d bytes", ret, (int)ret_num);
+                ESP_LOGI(TAG_ADC_TASK, "ret is %x, ret_num is %d bytes, in time %d", ret, (int)ret_num, (int)(done_timer - start_timer));
+                start_timer = esp_rtc_get_time_us();
                 for (int i = 0; i < ret_num; i += SOC_ADC_DIGI_RESULT_BYTES) {
                     adc_digi_output_data_t *p = (adc_digi_output_data_t*)&gAs5600.buffer[i];
                     uint32_t chan_num = p->type2.channel;
                     uint32_t data = p->type2.data;
                     /* Check the channel number validation, the data is invalid if the channel num exceed the maximum channel */
-                    if (chan_num < SOC_ADC_CHANNEL_NUM(AS5600_ADC_CONF_UNIT)) {
-                        ESP_LOGI(TAG_ADC_TASK, "Unit: %d, Channel: %"PRIu32", Value: %"PRIx32, gAs5600.unit, chan_num, data);
-                    } else {
+                    if (!(chan_num < SOC_ADC_CHANNEL_NUM(AS5600_ADC_CONF_UNIT))) {
                         ESP_LOGW(TAG_ADC_TASK, "Invalid data [%d_%"PRIu32"_%"PRIx32"]", gAs5600.unit, chan_num, data);
                     }
                 }
-                /**
-                 * Because printing is slow, so every time you call `ulTaskNotifyTake`, it will immediately return.
-                 * To avoid a task watchdog timeout, add a delay here. When you replace the way you process the data,
-                 * usually you don't need this delay (as this task will block for a while).
-                 */
-                vTaskDelay(1);
             } else if (ret == ESP_ERR_TIMEOUT) {
                 //We try to read `EXAMPLE_READ_LEN` until API returns timeout, which means there's no available data
                 break;

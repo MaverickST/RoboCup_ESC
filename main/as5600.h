@@ -23,7 +23,6 @@
 // #include "driver/i2c.h"
 #include "driver/i2c_master.h"
 #include "freertos/FreeRTOS.h"
-#include "sdkconfig.h"
 
 #include "as5600_types.h"
 
@@ -34,16 +33,16 @@ static const char* TAG_AS5600 = "AS5600";
 
 #define AS5600_SENSOR_ADDR  0x36        /*!< slave address for AS5600 sensor */
 
-#define AS5600_ADC_SAMPLE_FREQ_HZ      1000        /*!< ADC sample frequency in Hz */
+#define AS5600_ADC_SAMPLE_FREQ_HZ      2000        /*!< ADC sample frequency in Hz */
 #define AS5600_ADC_CONF_UNIT           ADC_UNIT_1  /*!< ADC unit for ADC1 */
 #define AS5600_ADC_RESOLUTION_12_BIT   4095        /*!< 12-bit resolution for ADC */  
-#define AS5600_ADC_READ_SIZE_BYTES     128*SOC_ADC_DIGI_DATA_BYTES_PER_CONV   /*!< Read size in bytes */
+#define AS5600_ADC_READ_SIZE_BYTES     4096*SOC_ADC_DIGI_DATA_BYTES_PER_CONV   /*!< Read size in bytes */
 #define AS5600_ADC_MAX_BUF_SIZE        4*AS5600_ADC_READ_SIZE_BYTES                   /*!< Maximum buffer size for ADC */
 
 #define AS5600_ADC_CONV_MODE           ADC_CONV_SINGLE_UNIT_1
 #define AS5600_ADC_OUTPUT_TYPE         ADC_DIGI_OUTPUT_FORMAT_TYPE2
 #define AS5600_ADC_ATTEN               ADC_ATTEN_DB_0
-#define AS5600_ADC_BIT_WIDTH           CONFIG_SOC_ADC_DIGI_MIN_BITWIDTH
+#define AS5600_ADC_BIT_WIDTH           SOC_ADC_DIGI_MAX_BITWIDTH
 #define AS5600_ADC_CHANNEL_COUNT       1
 
 typedef struct

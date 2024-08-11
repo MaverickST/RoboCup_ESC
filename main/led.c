@@ -38,12 +38,12 @@ void led_timer_callback(void *arg)
 {
     led_rgb_t *led = (led_rgb_t *)arg;
     led->state = !led->state;
-    ESP_LOGI(TAG_led, "led_timer_callback: %d  color: %02x  time: %d", led->state, led->color, (int)(esp_rtc_get_time_us() - led->tv_now));
+    // ESP_LOGI(TAG_led, "led_timer_callback: %d  color: %02x  time: %d", led->state, led->color, (int)(esp_rtc_get_time_us() - led->tv_now));
     if (led->state) {
         led->cnt_blink++;
         led_turn_color(led, led->color);
     }else{
-        ESP_LOGI(TAG_led, "led_timer_callback: turn off");
+        // ESP_LOGI(TAG_led, "led_timer_callback: turn off");
         led_turn_color(led, 0x00);
         if (!led->blink) ESP_ERROR_CHECK(esp_timer_delete(led->oneshot_timer));
     }
@@ -78,6 +78,6 @@ void led_setup_timer(led_rgb_t *led, uint8_t color, uint32_t time)
     led->oneshot_timer = oneshot_timer;
 
     led->tv_now = esp_rtc_get_time_us();
-    ESP_LOGI(TAG_led, "led_setup_timer: %d", (int)led->tv_now);
+    // ESP_LOGI(TAG_led, "led_setup_timer: %d", (int)led->tv_now);
     ESP_ERROR_CHECK(esp_timer_start_once(led->oneshot_timer, time));
 }

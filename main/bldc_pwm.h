@@ -24,7 +24,8 @@
 #include "driver/gpio.h"
 
 typedef struct {
-    uint32_t pwm_gpio_num;  ///< GPIO number
+    uint8_t rev_gpio_num;   ///< GPIO number
+    uint8_t pwm_gpio_num;   ///< GPIO number
     uint32_t pwm_freq_hz;   ///< PWM frequency in Hz
     uint32_t pwm_duty_us;   ///< PWM duty cycle in microseconds
     uint32_t max_speed_hz;  ///< Maximum speed in Hz
@@ -35,7 +36,9 @@ typedef struct {
     mcpwm_timer_handle_t timer;
     mcpwm_oper_handle_t operator;
     mcpwm_cmpr_handle_t cmp;
+    mcpwm_cmpr_handle_t cmp_rev;
     mcpwm_gen_handle_t gen;
+    mcpwm_gen_handle_t gen_rev;
 
 } bldc_pwm_motor_t;
 
@@ -48,7 +51,7 @@ typedef struct {
  * @param group_id 
  * @param resolution_hz 
  */
-esp_err_t bldc_init(bldc_pwm_motor_t *motor, uint8_t pwm_gpio_num, uint32_t pwm_freq_hz, uint32_t group_id, uint32_t resolution_hz);
+esp_err_t bldc_init(bldc_pwm_motor_t *motor, uint8_t pwm_gpio_num, uint8_t rev_gpio_num,uint32_t pwm_freq_hz, uint32_t group_id, uint32_t resolution_hz);
 
 /**
  * @brief Enable the motor

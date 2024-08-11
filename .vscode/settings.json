@@ -41,7 +41,12 @@
     "utility": "c",
     "stdbool.h": "c",
     "adc_cali.h": "c",
-    "esp_sleep.h": "c"
+    "esp_sleep.h": "c",
+    "as5600_types.h": "c",
+    "esp_spi_flash.h": "c",
+    "types.h": "c",
+    "led.h": "c",
+    "esp_log.h": "c"
   },
   "idf.openOcdConfigs": [
     "interface/ftdi/esp32_devkitj_v1.cfg",
