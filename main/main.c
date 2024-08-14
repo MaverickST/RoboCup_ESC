@@ -8,6 +8,7 @@
 #include "esp_partition.h"
 #include "esp_flash.h"
 #include "esp_timer.h"
+// #include "nvs_flash.h"
 // #include "driver/spi_common.h"
 
 #include "types.h"
@@ -15,6 +16,11 @@
 #include "uart_console.h"
 #include "bldc_pwm.h"
 #include "as5600.h"
+
+
+// -------------------------------------------------------------------------- 
+// ----------------------------- DEFINITIONS --------------------------------
+// --------------------------------------------------------------------------
 
 #define I2C_MASTER_SCL_GPIO 4       /*!< gpio number for I2C master clock */
 #define I2C_MASTER_SDA_GPIO 5       /*!< gpio number for I2C master data  */
@@ -32,24 +38,39 @@
 
 #define UART_NUM        0
 
+// --------------------------------------------------------------------------
+// ----------------------------- GLOBAL VARIABLES ---------------------------
+// --------------------------------------------------------------------------
+
 static const char* TAG_UART_TASK = "uart_task";
 static const char* TAG_ADC_TASK = "adc_task";
 static const char* TAG_CMD = "cmd";
 
 static TaskHandle_t task_handle_adc;
-uint32_t start_timer;
-uint32_t done_timer;
 
 volatile flags_t gFlag;
 led_rgb_t gLed;
 uart_console_t gUc;
 bldc_pwm_motor_t gMotor;
 as5600_t gAs5600;
-
+system_t gSys;
 
 // --------------------------------------------------------------------------
 // ----------------------------- PROTOTYPES ---------------------------------
 // --------------------------------------------------------------------------
+
+/**
+ * @brief Initialize some variables to start the system
+ * 
+ */
+void init_system(void);
+
+/**
+ * @brief Callback for the system one-shot timer
+ * 
+ * @param arg 
+ */
+void sys_timer_cb(void *arg);
 
 /**
  * @brief Callback for the ADC continuous conversion
@@ -74,7 +95,7 @@ bool adc_pool_overflow_cb(adc_continuous_handle_t handle, const adc_continuous_e
  * 
  * @param cmd 
  */
-void proccess_cmd(const char *cmd);
+void process_cmd(const char *cmd);
 
 /**
  * @brief Task to handle the ADC continuous conversion
@@ -96,23 +117,24 @@ void uart_event_task(void *pvParameters);
 
 void app_main(void)
 {
-    ///< LED Initialization
+    ///< ---------------------- LED ----------------------
     led_init(&gLed, LED_LSB_GPIO, LED_TIME_US, true);
     led_set_blink(&gLed, true, 3);
     led_setup_green(&gLed, LED_TIME_US);
 
-    ///< UART console initialization
+    ///< ---------------------- UART ---------------------
     uconsole_init(&gUc, UART_NUM);
     xTaskCreate(uart_event_task, "uart_event_task", 3*1024, NULL, 1, NULL);
 
-    ///< BLDC motor initialization
+    ///< ---------------------- BLDC ---------------------
     bldc_init(&gMotor, MOTOR_MCPWM_GPIO, MOTOR_REVERSE_GPIO, MOTOR_MCPWM_FREQ_HZ, 0, MOTOR_MCPWM_TIMER_RESOLUTION_HZ);
     bldc_enable(&gMotor);
-    bldc_set_speed(&gMotor, 1);
+    bldc_set_duty(&gMotor, 1); // Set duty to 0.1%, so the motor will not move
 
-    ///< AS5600 sensor initialization
+    ///< ---------------------- AS5600 -------------------
     as5600_init(&gAs5600, I2C_MASTER_NUM, I2C_MASTER_SCL_GPIO, I2C_MASTER_SDA_GPIO, AS5600_OUT_GPIO);
 
+    // Set some configurations to the AS5600
     as5600_config_t conf = {
         .PM = AS5600_POWER_MODE_NOM, ///< Normal mode
         .HYST = AS5600_HYSTERESIS_OFF, ///< Hysteresis off
@@ -124,47 +146,118 @@ void app_main(void)
     };
     as5600_set_conf(&gAs5600, conf);
 
-    adc_continuous_evt_cbs_t cbs = {
-        .on_conv_done = adc_conv_done_cb,
-        .on_pool_ovf = adc_pool_overflow_cb,
-    };
-    ESP_ERROR_CHECK(adc_continuous_register_event_callbacks(gAs5600.adc_cont_handle, &cbs, NULL));
-    start_timer = esp_rtc_get_time_us();
-    as5600_adc_continuous_start(&gAs5600);
-    
-    xTaskCreate(adc_continuous_task, "adc_continuous_task", 2*1024, NULL, 3, &task_handle_adc); // configMAX_PRIORITIES
+    ///< ---------------------- SYSTEM -------------------
+    // 'System' refers to more general variables and functions that are used to control the system, which
+    // consists of the BLDC motor, the AS5600 sensor, the LED, and the UART console.
+    init_system();
 
-    ///< Flash (NVS) initialization
-    const esp_partition_t *part = esp_partition_find_first(ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_DATA_NVS, "angle_pos");
-
-    // spi_bus_initialize();
-    esp_flash_init(part->flash_chip);
-    
-    esp_flash_erase_region(part->flash_chip, part->address, part->size);
-
-    // uint8_t data[16] = {'H', 'e', 'l', 'l', 'o', 0x05, 0x06, 0x07,
-    //                     0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F};
-    uint8_t data[32] = "Hello, World! Whats up?";
-    esp_flash_write(part->flash_chip, data, part->address, sizeof(data));
-
-    uint8_t read_data[32];
-    esp_flash_read(part->flash_chip, read_data, part->address, sizeof(read_data));
-    ESP_LOGI("flash", "read_data-> %s", read_data);
-    
 }
 
 // --------------------------------------------------------------------------
 // ------------------------------- FUNCTIONS --------------------------------
 // --------------------------------------------------------------------------
 
+void init_system(void)
+{
+    ///< ---------------------- ADC ----------------------
+    adc_continuous_evt_cbs_t cbs = {
+        .on_conv_done = adc_conv_done_cb,
+        .on_pool_ovf = adc_pool_overflow_cb,
+    };
+    ESP_ERROR_CHECK(adc_continuous_register_event_callbacks(gAs5600.adc_cont_handle, &cbs, NULL));
+
+    xTaskCreate(adc_continuous_task, "adc_continuous_task", 2*1024, NULL, 3, &task_handle_adc); // configMAX_PRIORITIES
+    // start_timer = esp_rtc_get_time_us();
+
+    ///< ---------------------- SYSTEM -------------------
+    gSys.STATE = NONE; ///< Initialize the state machine
+    // gSys.start_adc_time = esp_timer_get_time();
+
+    // Get the partition table and erase the partition to store new data
+    gSys.part = esp_partition_find_first(ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_DATA_FAT, "angle_pos");
+    ESP_ERROR_CHECK(esp_flash_erase_region(gSys.part->flash_chip, gSys.part->address, gSys.part->size));
+
+    // Create a one-shot timer to control the sequence
+    const esp_timer_create_args_t oneshot_timer_args = {
+        .callback = &sys_timer_cb,
+        .arg = NULL, ////< argument specified here will be passed to timer callback function
+        .name = "sys-one-shot" ///< name is optional, but may help identify the timer when debugging
+    };
+    esp_timer_handle_t oneshot_timer;
+    ESP_ERROR_CHECK(esp_timer_create(&oneshot_timer_args, &oneshot_timer));
+    gSys.oneshot_timer = oneshot_timer;
+
+    ESP_ERROR_CHECK(esp_timer_start_once(gSys.oneshot_timer, NONE_TO_STEPS_US));
+}
+
+void sys_timer_cb(void *arg)
+{
+    switch(gSys.STATE)
+    {
+        case NONE:
+            ESP_LOGI("sys_timer_cb", "INIT_PWM_BLDC_STEP_1");
+            bldc_set_duty(&gMotor, 60); ///< Set the duty cycle to 6%
+            gSys.STATE = INIT_PWM_BLDC_STEP_1;
+            ESP_ERROR_CHECK(esp_timer_start_once(gSys.oneshot_timer, STEP1_TO_STEP2_US));
+            break;
+
+        case INIT_PWM_BLDC_STEP_1: // Step 1: Start the timer to go to step 2 and set duty >5.7%
+            ESP_LOGI("sys_timer_cb", "INIT_PWM_BLDC_STEP_2");
+            bldc_set_duty(&gMotor, 50); ///< Set the duty cycle to 5%
+            gSys.STATE = INIT_PWM_BLDC_STEP_2;
+            ESP_ERROR_CHECK(esp_timer_start_once(gSys.oneshot_timer, STEPS_TO_SEQ_US));
+            break;
+
+        case INIT_PWM_BLDC_STEP_2: 
+            ESP_LOGI("sys_timer_cb", "SEQ_BLDC_1");
+            ESP_ERROR_CHECK(esp_timer_delete(gSys.oneshot_timer));
+            gSys.STATE = SEQ_BLDC_1;
+            bldc_set_duty(&gMotor, 65); ///< Set the duty cycle to 6.5%
+            as5600_adc_continuous_start(&gAs5600); ///< Start the ADC continuous conversion
+            gSys.start_adc_time = esp_rtc_get_time_us();
+            break;
+
+        default:
+            ESP_LOGI("sys_timer_cb", "default");
+            break;
+    }
+}
 
 bool adc_conv_done_cb(adc_continuous_handle_t handle, const adc_continuous_evt_data_t *edata, void *user_data)
 {
-    BaseType_t mustYield = pdFALSE;
-    vTaskNotifyGiveFromISR(task_handle_adc, &mustYield);
+    gSys.done_adc_time = esp_rtc_get_time_us();
 
-    // ESP_LOGI("adc_cb", "ADC continuous conversion done. Time: %d, yield: %d", (int)(esp_rtc_get_time_us() - generic_timer), (int)mustYield);
-    done_timer = esp_rtc_get_time_us();
+    switch(gSys.STATE)
+    {
+        case SEQ_BLDC_1:
+            bldc_set_duty(&gMotor, 75); ///< Set the duty cycle to 7.5%
+            gSys.STATE = SEQ_BLDC_2;
+            break;
+
+        case SEQ_BLDC_2:
+            bldc_set_duty(&gMotor, 85); ///< Set the duty cycle to 8.5%
+            gSys.STATE = SEQ_BLDC_3;
+            break;
+
+        case SEQ_BLDC_3:
+            bldc_set_duty(&gMotor, 1); ///< Stop the motor
+            gSys.STATE = SEQ_BLDC_LAST;
+            break;
+
+        case SEQ_BLDC_LAST:
+            bldc_set_duty(&gMotor, 1); ///< Stop the motor
+            gSys.STATE = BLDC_STOP;
+            break;
+
+        default:
+            break;
+    }
+    BaseType_t mustYield = pdFALSE;
+    if (gSys.STATE != BLDC_STOP) {
+        vTaskNotifyGiveFromISR(task_handle_adc, &mustYield);
+    } else {
+        vTaskSuspend(task_handle_adc);
+    }
 
     return (mustYield == pdTRUE);
 }
@@ -176,17 +269,17 @@ bool adc_pool_overflow_cb(adc_continuous_handle_t handle, const adc_continuous_e
 
 void adc_continuous_task(void *pvParameters)
 {
-    ESP_LOGI(TAG_ADC_TASK, "ADC continuous task started");
     while (1) {
 
         ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+        // bldc_set_duty(&gMotor, 1); ///< Stop the motor to process the data
 
         while (1) {
             esp_err_t ret = adc_continuous_read(gAs5600.adc_cont_handle, gAs5600.buffer, AS5600_ADC_READ_SIZE_BYTES, &gAs5600.ret_num, 0);
             uint32_t ret_num = gAs5600.ret_num;
             if (ret == ESP_OK) {
-                ESP_LOGI(TAG_ADC_TASK, "ret is %x, ret_num is %d bytes, in time %d", ret, (int)ret_num, (int)(done_timer - start_timer));
-                start_timer = esp_rtc_get_time_us();
+                ESP_LOGI(TAG_ADC_TASK, "ret is %x, ret_num is %d bytes, in time %d", ret, (int)ret_num, (int)(gSys.done_adc_time - gSys.start_adc_time));
+                gSys.start_adc_time = esp_rtc_get_time_us();
                 for (int i = 0; i < ret_num; i += SOC_ADC_DIGI_RESULT_BYTES) {
                     adc_digi_output_data_t *p = (adc_digi_output_data_t*)&gAs5600.buffer[i];
                     uint32_t chan_num = p->type2.channel;
@@ -223,7 +316,7 @@ void uart_event_task(void *pvParameters)
                 strncpy(cmd, (const char *)gUc.data, 3); ///< Get the first 3 characters
                 cmd[3] = '\0'; ///< Add the null terminator
                 ESP_LOGI(TAG_UART_TASK, "cmd-> %s", cmd);
-                proccess_cmd(cmd);
+                process_cmd(cmd);
                 break;
 
             case UART_FIFO_OVF: ///< Event of HW FIFO overflow
@@ -247,7 +340,7 @@ void uart_event_task(void *pvParameters)
     vTaskDelete(NULL);
 }
 
-void proccess_cmd(const char *cmd)
+void process_cmd(const char *cmd)
 {
     ///< Check if the data is valid
     uint8_t len_uc_data = strlen((const char *)gUc.data);
@@ -263,7 +356,7 @@ void proccess_cmd(const char *cmd)
         uint16_t value = atoi(str_value);
         ESP_LOGI(TAG_CMD, "value-> %d", value);
         if (value != 0) { ///< If value=0, that means data is not a number
-            bldc_set_speed(&gMotor, value);
+            bldc_set_duty(&gMotor, value);
         }
     }
     ///< Command to read the angle from the AS5600 sensor

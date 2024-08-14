@@ -19,7 +19,7 @@ esp_err_t bldc_init(bldc_pwm_motor_t *motor, uint8_t pwm_gpio_num, uint8_t rev_g
     motor->pwm_freq_hz = pwm_freq_hz;
     motor->group_id = group_id;
     motor->resolution_hz = resolution_hz;
-    motor->max_speed_hz = resolution_hz / pwm_freq_hz;
+    motor->max_cmp = resolution_hz / pwm_freq_hz;
     
     // mcpwm timer
     mcpwm_timer_config_t timer_config = {
@@ -89,10 +89,10 @@ esp_err_t bldc_disable(bldc_pwm_motor_t *motor)
     return ESP_OK;
 }
 
-esp_err_t bldc_set_speed(bldc_pwm_motor_t *motor, uint32_t speed)
+esp_err_t bldc_set_duty(bldc_pwm_motor_t *motor, uint32_t duty)
 {
-    uint32_t nw_cmp = speed*motor->max_speed_hz/1000;
-    if (nw_cmp > motor->max_speed_hz) {
+    uint32_t nw_cmp = duty*motor->max_cmp/1000;
+    if (nw_cmp > motor->max_cmp) {
         // ESP_LOGE(BLDC_TAG, "speed %d is greater than max speed %d", speed, motor->max_speed_hz);
         return ESP_FAIL;
     }

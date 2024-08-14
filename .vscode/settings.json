@@ -46,7 +46,8 @@
     "esp_spi_flash.h": "c",
     "types.h": "c",
     "led.h": "c",
-    "esp_log.h": "c"
+    "esp_log.h": "c",
+    "nvs_flash.h": "c"
   },
   "idf.openOcdConfigs": [
     "interface/ftdi/esp32_devkitj_v1.cfg",

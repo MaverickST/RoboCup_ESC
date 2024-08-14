@@ -28,8 +28,9 @@ typedef struct {
     uint8_t pwm_gpio_num;   ///< GPIO number
     uint32_t pwm_freq_hz;   ///< PWM frequency in Hz
     uint32_t pwm_duty_us;   ///< PWM duty cycle in microseconds
-    uint32_t max_speed_hz;  ///< Maximum speed in Hz
+    uint32_t max_cmp;  ///< Maximum speed in Hz
 
+    uint16_t duty_cycle;    ///< Duty cycle in percentage
     int group_id;           ///< MCPWM group number 
     uint32_t resolution_hz; ///< MCPWM timer frequency
 
@@ -68,11 +69,11 @@ esp_err_t bldc_enable(bldc_pwm_motor_t *motor);
 esp_err_t bldc_disable(bldc_pwm_motor_t *motor);
 
 /**
- * @brief Set the speed of the motor
+ * @brief Set the duty which will receive the ESC. The duty is a value between 0 and 1000
  * 
  * @param motor instance of the motor
- * @param speed range from 0 to 1000, where 0 is stopped and 1000 is maximum speed
+ * @param duty range from 0 to 1000, where 0 is 0% and 1000 is 100%
  */
-esp_err_t bldc_set_speed(bldc_pwm_motor_t *motor, uint32_t speed);
+esp_err_t bldc_set_duty(bldc_pwm_motor_t *motor, uint32_t duty);
 
 #endif // __PWM_MOTOR_H__

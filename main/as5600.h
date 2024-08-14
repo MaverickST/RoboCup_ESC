@@ -33,10 +33,11 @@ static const char* TAG_AS5600 = "AS5600";
 
 #define AS5600_SENSOR_ADDR  0x36        /*!< slave address for AS5600 sensor */
 
-#define AS5600_ADC_SAMPLE_FREQ_HZ      2000        /*!< ADC sample frequency in Hz */
-#define AS5600_ADC_CONF_UNIT           ADC_UNIT_1  /*!< ADC unit for ADC1 */
-#define AS5600_ADC_RESOLUTION_12_BIT   4095        /*!< 12-bit resolution for ADC */  
-#define AS5600_ADC_READ_SIZE_BYTES     4096*SOC_ADC_DIGI_DATA_BYTES_PER_CONV   /*!< Read size in bytes */
+#define AS5600_ADC_SAMPLE_FREQ_HZ      5000         /*!< ADC sample frequency in Hz */
+#define AS5600_SAMPLING_TIME_MS        512          /*!< Sampling time in milliseconds */
+#define AS5600_ADC_CONF_UNIT           ADC_UNIT_1   /*!< ADC unit for ADC1 */
+#define AS5600_ADC_RESOLUTION_12_BIT   4095         /*!< 12-bit resolution for ADC */  
+#define AS5600_ADC_READ_SIZE_BYTES     ((AS5600_ADC_SAMPLE_FREQ_HZ*AS5600_SAMPLING_TIME_MS)/1000)*SOC_ADC_DIGI_DATA_BYTES_PER_CONV   /*!< Read size in bytes */
 #define AS5600_ADC_MAX_BUF_SIZE        4*AS5600_ADC_READ_SIZE_BYTES                   /*!< Maximum buffer size for ADC */
 
 #define AS5600_ADC_CONV_MODE           ADC_CONV_SINGLE_UNIT_1
@@ -90,7 +91,7 @@ void as5600_get_out_value(as5600_t *as5600, uint16_t *out_value);
  */
 static inline void as5600_adc_continuous_start(as5600_t *as5600)
 {
-    adc_continuous_start(as5600->adc_cont_handle);
+    ESP_ERROR_CHECK(adc_continuous_start(as5600->adc_cont_handle));
 }
 
 /**
