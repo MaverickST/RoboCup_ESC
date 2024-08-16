@@ -9,8 +9,7 @@
  */
 
 /**
- * @brief Register addresses
- * 
+ * @brief Register addresses for the AS5600 sensor
  */
 typedef enum 
 {
@@ -48,10 +47,8 @@ typedef enum
     AS5600_POWER_MODE_COUNT = 0x04   /*!< Number of power modes */
 } as5600_power_mode_t;
 
-
 /**
  * @brief PWM frequency for PW bitfield at the CONF register
- * 
  */
 typedef enum
 {
@@ -62,9 +59,134 @@ typedef enum
     AS5600_HYSTERESIS_COUNT = 0x04  /*!< Number of hysteresis modes */
 } as5600_hysteresis_t;
 
-
-typedef struct
+/**
+ * @brief Output stage types for OUTS bitfield at the CONF register
+ */
+typedef enum
 {
-    as5600_reg_t reg;
-    uint8_t data;
+    AS5600_OUTPUT_STAGE_ANALOG_FR = 0x00, ///< Analog output 0%-100%
+    AS5600_OUTPUT_STAGE_ANALOG_RR = 0x01, ///< Analog output 10%-90%
+    AS5600_OUTPUT_STAGE_DIGITAL_PWM = 0x02, ///< PWM output
+    AS5600_OUTPUT_STAGE_COUNT = 0x03 ///< Number of output stages
+} as5600_output_stage_t;
+
+/**
+ * @brief Allowed PWM output frequencies at the PWMF bitfield at the CONF register
+ */
+typedef enum
+{
+    AS5600_PWM_FREQUENCY_115HZ = 0x00, ///< 115Hz
+    AS5600_PWM_FREQUENCY_230HZ = 0x01, ///< 230Hz
+    AS5600_PWM_FREQUENCY_460HZ = 0x02, ///< 460Hz
+    AS5600_PWM_FREQUENCY_920HZ = 0x03, ///< 920Hz
+    AS5600_PWM_FREQUENCY_COUNT = 0x04  ///< Number of PWM frequencies
+} as5600_pwm_frequency_t;
+
+/**
+ * @brief Slow filter step response delays for SF bitfield at CONF register.
+ */
+typedef enum
+{
+    AS5600_SLOW_FILTER_16X = 0x00,  ///< 16x
+    AS5600_SLOW_FILTER_8X = 0x01,   ///< 8x
+    AS5600_SLOW_FILTER_4X = 0x02,   ///< 4x
+    AS5600_SLOW_FILTER_2X = 0x03,   ///< 2x
+    AS5600_SLOW_FILTER_COUNT = 0x04 ///< Number of slow filter steps
+} as5600_slow_filter_t;
+
+/**
+ * @brief Fast filter threshold options for FF bitfield at CONF register.
+ * 
+ * For a fast step response and low noise after settling, the fast 
+ * filter can be enabled
+ * 
+ * The fast filter works only if the input variation is greater than the fast filter threshold, 
+ * otherwise the output response is determined only by the slow filter
+ */
+typedef enum
+{
+    AS5600_FF_THRESHOLD_SLOW_FILTER_ONLY = 0x00, ///< Slow filter only
+    AS5600_FF_THRESHOLD_6LSB = 0x01, ///< 6LSB
+    AS5600_FF_THRESHOLD_7LSB = 0x02, ///< 7LSB
+    AS5600_FF_THRESHOLD_9LSB = 0x03, ///< 9LSB
+    AS5600_FF_THRESHOLD_18LSB = 0x04, ///< 18LSB
+    AS5600_FF_THRESHOLD_21LSB = 0x05, ///< 21LSB
+    AS5600_FF_THRESHOLD_24LSB = 0x06, ///< 24LSB
+    AS5600_FF_THRESHOLD_10LSB = 0x07, ///< 10LSB
+    AS5600_FF_THRESHOLD_COUNT = 0x08 ///< Number of fast filter thresholds
+} as5600_ff_threshold_t;
+
+/**
+ * @brief BURN register commands
+ */
+typedef enum
+{
+    AS5600_BURN_MODE_BURN_SETTING = 0x40U, ///< Command for burning a setting configuration
+    AS5600_BURN_MODE_BURN_ANGLE = 0x80U, ///< Command for burning start and end angles
+    AS5600_BURN_MODE_COUNT, ///< Number of burn modes
+} as5600_burn_mode_t;
+
+/**
+ * @brief Watchdog options for WD bitfield at CONF register
+ */
+typedef enum
+{
+    AS5600_WATCHDOG_OFF = 0x00, ///< Watchdog off
+    AS5600_WATCHDOG_ON = 0x01, ///< Watchdog on
+    AS5600_WATCHDOG_COUNT = 0x02 ///< Number of watchdog options
+} as5600_watchdog_t;
+
+/**
+ * @brief Configuration bitfield for the CONF register
+ */
+typedef union
+{
+    uint16_t WORD;
+	struct{
+		as5600_power_mode_t     PM     :2; ///< Power mode: 00 - NOM, 01 - LPM1, 10 - LPM2, 11 - LPM3
+        as5600_hysteresis_t     HYST   :2; ///< Hysteresis: 00 - OFF, 01 - 1LSB, 10 - 2LSB, 11 - 3LSB
+        as5600_output_stage_t   OUTS   :2; ///< Output stage: 00 - analog(0%-100%), 01 - analog(10%-90%), 10 - PWM 
+        as5600_pwm_frequency_t  PWMF   :2; ///< PWM frequency: 00 - 115Hz, 01 - 230Hz, 10 - 460Hz, 11 - 920Hz
+        as5600_slow_filter_t    SF     :2; ///< Slow filter: 00 - 16x, 01 - 8x, 10 - 4x, 11 - 2x
+        as5600_ff_threshold_t   FTH    :3; ///< Fast filter threshold
+        as5600_watchdog_t       WD     :1; ///< Watchdog: 0 - disabled, 1 - enabled
+		uint16_t                       :2;
+	};
 } as5600_config_t;
+
+///< BITFIELD CONTANT VALUES
+#define kAS5600_CONF_PM_NOM      0x00
+#define kAS5600_CONF_PM_LPM1     0x01
+#define kAS5600_CONF_PM_LPM2     0x02
+#define kAS5600_CONF_PM_LPM3     0x03
+
+#define kAS5600_CONF_HYST_OFF    0x00
+#define kAS5600_CONF_HYST_1LSB   0x01
+#define kAS5600_CONF_HYST_2LSB   0x02
+#define kAS5600_CONF_HYST_3LSB   0x03
+
+#define kAS5600_CONF_OUTS_ANALOG_0_100  0x00
+#define kAS5600_CONF_OUTS_ANALOG_10_90  0x01
+#define kAS5600_CONF_OUTS_PWM           0x02
+
+#define kAS5600_CONF_PWMF_115HZ     0x00
+#define kAS5600_CONF_PWMF_230HZ     0x01
+#define kAS5600_CONF_PWMF_460HZ     0x02
+#define kAS5600_CONF_PWMF_920HZ     0x03
+
+#define kAS5600_CONF_SF_16X     0x00
+#define kAS5600_CONF_SF_8X      0x01
+#define kAS5600_CONF_SF_4X      0x02
+#define kAS5600_CONF_SF_2X      0x03
+
+#define kAS5600_CONF_FTH_SFO    0x00
+#define kAS5600_CONF_FTH_1LSB   0x01
+#define kAS5600_CONF_FTH_2LSB   0x02
+#define kAS5600_CONF_FTH_3LSB   0x03
+#define kAS5600_CONF_FTH_4LSB   0x04
+#define kAS5600_CONF_FTH_5LSB   0x05
+#define kAS5600_CONF_FTH_6LSB   0x06
+#define kAS5600_CONF_FTH_7LSB   0x07
+
+#define kAS5600_CONF_WD_OFF     0x00
+#define kAS5600_CONF_WD_ON      0x01
