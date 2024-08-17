@@ -91,6 +91,11 @@ esp_err_t bldc_disable(bldc_pwm_motor_t *motor)
 
 esp_err_t bldc_set_duty(bldc_pwm_motor_t *motor, uint32_t duty)
 {
+    if (duty > 1000) {
+        // ESP_LOGE(BLDC_TAG, "duty %d is greater than 1000", duty);
+        return ESP_FAIL;
+    }
+    motor->duty_cycle = duty;
     uint32_t nw_cmp = duty*motor->max_cmp/1000;
     if (nw_cmp > motor->max_cmp) {
         // ESP_LOGE(BLDC_TAG, "speed %d is greater than max speed %d", speed, motor->max_speed_hz);

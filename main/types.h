@@ -54,6 +54,7 @@ typedef struct
         STEPS_TO_SEQ_US    = 5*1000*1000, ///< The time between the first two steps and the sequence is 5s
     } TIME;
 
+    uint16_t duty_to_save; ///< PWM value to save in the NVS
     uint32_t actual_num_samples; ///< Number of samples readed from the ADC
     esp_timer_handle_t oneshot_timer;    ///< Timer to control the sequence
     const esp_partition_t *part;   ///< Pointer to the partition table

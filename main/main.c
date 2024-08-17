@@ -138,7 +138,7 @@ void app_main(void)
     as5600_config_t conf = {
         .PM = AS5600_POWER_MODE_NOM, ///< Normal mode
         .HYST = AS5600_HYSTERESIS_OFF, ///< Hysteresis off
-        .OUTS = AS5600_OUTPUT_STAGE_ANALOG_FR, ///< Analog output 0%-100% 
+        .OUTS = AS5600_OUTPUT_STAGE_ANALOG_RR, ///< Analog output 10%-90%
         .PWMF = AS5600_PWM_FREQUENCY_115HZ, ///< PWM frequency 115Hz
         .SF = AS5600_SLOW_FILTER_16X, ///< Slow filter 16x
         .FTH = AS5600_FF_THRESHOLD_SLOW_FILTER_ONLY, ///< Slow filter only
@@ -171,6 +171,7 @@ void init_system(void)
 
     ///< ---------------------- SYSTEM -------------------
     gSys.STATE = NONE; ///< Initialize the state machine
+    gSys.actual_num_samples = 0; ///< Initialize the number of samples readed from the ADC
     // gSys.start_adc_time = esp_timer_get_time();
 
     // Get the partition table and erase the partition to store new data
@@ -232,16 +233,19 @@ bool adc_conv_done_cb(adc_continuous_handle_t handle, const adc_continuous_evt_d
         case SEQ_BLDC_1:
             bldc_set_duty(&gMotor, 75); ///< Set the duty cycle to 7.5%
             gSys.STATE = SEQ_BLDC_2;
+            gSys.duty_to_save = 65;
             break;
 
         case SEQ_BLDC_2:
             bldc_set_duty(&gMotor, 85); ///< Set the duty cycle to 8.5%
             gSys.STATE = SEQ_BLDC_3;
+            gSys.duty_to_save = 75;
             break;
 
         case SEQ_BLDC_3:
             bldc_set_duty(&gMotor, 1); ///< Stop the motor
             gSys.STATE = SEQ_BLDC_LAST;
+            gSys.duty_to_save = 85;
             break;
 
         case SEQ_BLDC_LAST:
@@ -255,7 +259,7 @@ bool adc_conv_done_cb(adc_continuous_handle_t handle, const adc_continuous_evt_d
     BaseType_t mustYield = pdFALSE;
     if (gSys.STATE != BLDC_STOP) {
         vTaskNotifyGiveFromISR(task_handle_adc, &mustYield);
-    } else {
+    } else { // Stop the task and also de ADC conversion (but this last one currently is not implemented)
         vTaskSuspend(task_handle_adc);
     }
 
@@ -275,7 +279,7 @@ void adc_continuous_task(void *pvParameters)
         // bldc_set_duty(&gMotor, 1); ///< Stop the motor to process the data
 
         while (1) {
-            esp_err_t ret = adc_continuous_read(gAs5600.adc_cont_handle, gAs5600.buffer, AS5600_ADC_READ_SIZE_BYTES, &gAs5600.ret_num, 0);
+            esp_err_t ret = adc_continuous_read(gAs5600.adc_cont_handle, gAs5600.buffer, AS5600_ADC_READ_SIZE_BYTES, &gAs5600.ret_num, portMAX_DELAY);
             uint32_t ret_num = gAs5600.ret_num;
             if (ret == ESP_OK) {
                 ESP_LOGI(TAG_ADC_TASK, "ret is %x, ret_num is %d bytes, in time %d", ret, (int)ret_num, (int)(gSys.done_adc_time - gSys.start_adc_time));

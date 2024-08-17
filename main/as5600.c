@@ -78,19 +78,42 @@ void as5600_init(as5600_t *as5600, i2c_port_t i2c_num, uint8_t scl, uint8_t sda,
     ESP_ERROR_CHECK(adc_continuous_config(handle, &dig_cfg));
     as5600->adc_cont_handle = handle;
 
+    // ------------- ADC calibration ------------- //
+
+    adc_cali_handle_t cali_handle = NULL;
+    adc_cali_curve_fitting_config_t cali_config = {
+        .unit_id = AS5600_ADC_CONF_UNIT,
+        .chan = as5600->chan,
+        .atten = AS5600_ADC_ATTEN,
+        .bitwidth = AS5600_ADC_BIT_WIDTH,
+    };
+    esp_err_t ret = adc_cali_create_scheme_curve_fitting(&cali_config, &cali_handle);
+    if (ret == ESP_OK) {
+        as5600->is_calibrated = true;
+        as5600->adc_cali_handle = cali_handle;
+    }
+    else {
+        ESP_LOGI(TAG_AS5600, "ADC calibration failed");
+    }
 }
 
 void as5600_deinit(as5600_t *as5600)
 {
     i2c_del_master_bus(as5600->dev_handle);
-    adc_oneshot_del_unit(as5600->adc_handle);
     adc_continuous_deinit(as5600->adc_cont_handle);
 }
 
-void as5600_get_out_value(as5600_t *as5600, uint16_t *out_value)
+void as5600_adc_raw_to_angle(as5600_t *as5600, uint16_t raw, uint16_t *angle)
 {
-    adc_oneshot_read(as5600->adc_handle, as5600->chan, (int *)out_value);
-    *out_value = (*out_value * AS5600_ADC_RESOLUTION_12_BIT) / 360;
+    if (as5600->is_calibrated && as5600->conf.OUTS == AS5600_OUTPUT_STAGE_ANALOG_RR) {
+        uint16_t voltage;
+        adc_cali_raw_to_voltage(as5600->adc_cali_handle, raw, &voltage);
+        voltage = LIMIT(voltage, VCC_3V3_MV/10, VCC_3V3_MV*9/10); // The OUT pin of the AS5600 sensor has a range of 10%-90% of VCC
+        *angle = MAP(voltage, VCC_3V3_MV/10, VCC_3V3_MV*9/10, 0, 360); // Map the voltage to the angle
+    }
+    else {
+        *angle = raw;
+    }
 }
 
 as5600_reg_t as5600_reg_str_to_addr(as5600_t *as5600, const char *reg_str)
@@ -241,6 +264,7 @@ void as5600_get_max_angle(as5600_t *as5600, uint16_t *max_angle)
 
 void as5600_set_conf(as5600_t *as5600, as5600_config_t conf)
 {
+    as5600->conf = conf;
     uint8_t write_buffer[] = {AS5600_REG_CONF_H, conf.WORD >> 8, conf.WORD};
     i2c_master_transmit(as5600->dev_handle, write_buffer, 3, I2C_TIMEOUT_MS / portTICK_PERIOD_MS);
 }

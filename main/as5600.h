@@ -2,6 +2,15 @@
  * \file        as5600.h
  * \brief
  * \details
+ * 
+ *          About the OUT pin in the AS5600 sensor:
+ * The ADC of the ESP32 is connected to the OUT pin of the AS5600 sensor.
+ * The OUT pin can be configured to output a 10%-90% (VCC) analog signal.
+ * Since the ESP32 ADC can only read 0-3.3V, the VCC of the AS5600 sensor must be 3.3V.
+ * But there is another problem. The characteristic graft of the ADC (Voltage vs. Digital Value) is not linear on all
+ * the range (0-3.3V). It is linear only on the 5%-90% range, aproximately.
+ * That is why the OUT pin must be configured to output a 10%-90% signal.
+ * 
  * \author      MaverickST
  * \version     0.0.3
  * \date        05/10/2023
@@ -17,16 +26,18 @@
 #include <string.h>
 #include "esp_log.h"
 #include "esp_adc/adc_continuous.h"
-#include "esp_adc/adc_oneshot.h"
-// #include "esp_adc/adc_cali.h"
-// #include "esp_adc/adc_cali_scheme.h"
-// #include "driver/i2c.h"
 #include "driver/i2c_master.h"
-#include "freertos/FreeRTOS.h"
+#include "esp_adc/adc_cali.h"
+#include "esp_adc/adc_cali_scheme.h"
 
 #include "as5600_types.h"
 
 static const char* TAG_AS5600 = "AS5600";
+
+#define VCC_3V3_MV          3300        /*!< VCC in mV */
+#define MAP(val, in_min, in_max, out_min, out_max) ((val - in_min) * (out_max - out_min) / (in_max - in_min) + out_min) /*!< Map function */
+#define ADC_TO_VOLTAGE(val) MAP(val, 0, AS5600_ADC_RESOLUTION_12_BIT, 0, VCC_3V3_MV) /*!< ADC to voltage conversion */
+#define LIMIT(a, min, max) (a < min ? min : (a > max ? max : a)) /*!< Limit a value between min and max */
 
 #define I2C_MASTER_FREQ_HZ  400*1000    /*!< I2C master clock frequency */
 #define I2C_TIMEOUT_MS      100         /*!< I2C timeout in milliseconds */
@@ -34,6 +45,7 @@ static const char* TAG_AS5600 = "AS5600";
 #define AS5600_SENSOR_ADDR  0x36        /*!< slave address for AS5600 sensor */
 
 #define AS5600_ADC_SAMPLE_FREQ_HZ      5000         /*!< ADC sample frequency in Hz */
+#define AS5600_ADC_SAMPLE_PERIOD_US    (1000000/AS5600_ADC_SAMPLE_FREQ_HZ) /*!< ADC sample period in microseconds */
 #define AS5600_SAMPLING_TIME_MS        512          /*!< Sampling time in milliseconds */
 #define AS5600_ADC_CONF_UNIT           ADC_UNIT_1   /*!< ADC unit for ADC1 */
 #define AS5600_ADC_RESOLUTION_12_BIT   4095         /*!< 12-bit resolution for ADC */  
@@ -42,7 +54,7 @@ static const char* TAG_AS5600 = "AS5600";
 
 #define AS5600_ADC_CONV_MODE           ADC_CONV_SINGLE_UNIT_1
 #define AS5600_ADC_OUTPUT_TYPE         ADC_DIGI_OUTPUT_FORMAT_TYPE2
-#define AS5600_ADC_ATTEN               ADC_ATTEN_DB_0
+#define AS5600_ADC_ATTEN               ADC_ATTEN_DB_12
 #define AS5600_ADC_BIT_WIDTH           SOC_ADC_DIGI_MAX_BITWIDTH
 #define AS5600_ADC_CHANNEL_COUNT       1
 
@@ -56,7 +68,10 @@ typedef struct
     uint32_t ret_num;
     adc_channel_t chan;
     adc_unit_t unit;
-    adc_oneshot_unit_handle_t adc_handle;
+    bool is_calibrated;
+    as5600_config_t conf;
+
+    adc_cali_handle_t adc_cali_handle;
     adc_continuous_handle_t adc_cont_handle;
 
     i2c_master_dev_handle_t dev_handle;
@@ -78,13 +93,6 @@ void as5600_init(as5600_t *as5600, i2c_port_t i2c_num, uint8_t scl, uint8_t sda,
 void as5600_deinit(as5600_t *as5600);
 
 /**
- * @brief Get the output value from the AS5600 sensor by reading the ADC
- * 
- * @param out_value Output value
- */
-void as5600_get_out_value(as5600_t *as5600, uint16_t *out_value);
-
-/**
  * @brief Start the ADC conversion in continuous mode.
  * 
  * @param as5600 
@@ -93,6 +101,14 @@ static inline void as5600_adc_continuous_start(as5600_t *as5600)
 {
     ESP_ERROR_CHECK(adc_continuous_start(as5600->adc_cont_handle));
 }
+
+/**
+ * @brief Convert raw ADC raw value to angle in degrees by using the ADC calibration API.
+ * Also take into account the range of the OUT pin of the AS5600 sensor, which is 10%-90% of VCC.
+ * 
+ * @param as5600 
+ */
+void as5600_adc_raw_to_angle(as5600_t *as5600, uint16_t raw, uint16_t *angle);
 
 /**
  * @brief Convert register string to register address

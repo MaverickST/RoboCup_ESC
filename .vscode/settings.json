@@ -47,7 +47,9 @@
     "types.h": "c",
     "led.h": "c",
     "esp_log.h": "c",
-    "nvs_flash.h": "c"
+    "nvs_flash.h": "c",
+    "adc_continuous.h": "c",
+    "adc.h": "c"
   },
   "idf.openOcdConfigs": [
     "interface/ftdi/esp32_devkitj_v1.cfg",
@@ -62,5 +64,6 @@
     "IDF_CCACHE_ENABLE": "1",
     "ESP_ROM_ELF_DIR": "C:\\Espressif\\tools\\esp-rom-elfs\\20230320/"
   },
-  "idf.gitPathWin": "C:/Espressif/tools/idf-git/2.44.0/cmd/git.exe"
+  "idf.gitPathWin": "C:/Espressif/tools/idf-git/2.44.0/cmd/git.exe",
+  "C_Cpp.errorSquiggles": "enabled"
 }
