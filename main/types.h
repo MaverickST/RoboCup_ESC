@@ -55,7 +55,7 @@ typedef struct
     } TIME;
 
     uint16_t duty_to_save; ///< PWM value to save in the NVS
-    uint32_t actual_num_samples; ///< Number of samples readed from the ADC
+    uint32_t current_bytes_written; ///< Number of samples readed from the ADC
     esp_timer_handle_t oneshot_timer;    ///< Timer to control the sequence
     const esp_partition_t *part;   ///< Pointer to the partition table
 

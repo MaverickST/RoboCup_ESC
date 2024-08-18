@@ -1,5 +1,6 @@
 #include <string.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include "sdkconfig.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
@@ -82,15 +83,6 @@ void sys_timer_cb(void *arg);
 bool adc_conv_done_cb(adc_continuous_handle_t handle, const adc_continuous_evt_data_t *edata, void *user_data);
 
 /**
- * @brief Callback for the ADC pool overflow
- * 
- * @param handle
- * @param edata
- * @param user_data
- */
-bool adc_pool_overflow_cb(adc_continuous_handle_t handle, const adc_continuous_evt_data_t *edata, void *user_data);
-
-/**
  * @brief Proccess the command received from the UART console
  * 
  * @param cmd 
@@ -162,21 +154,22 @@ void init_system(void)
     ///< ---------------------- ADC ----------------------
     adc_continuous_evt_cbs_t cbs = {
         .on_conv_done = adc_conv_done_cb,
-        .on_pool_ovf = adc_pool_overflow_cb,
     };
     ESP_ERROR_CHECK(adc_continuous_register_event_callbacks(gAs5600.adc_cont_handle, &cbs, NULL));
 
-    xTaskCreate(adc_continuous_task, "adc_continuous_task", 2*1024, NULL, 3, &task_handle_adc); // configMAX_PRIORITIES
+    xTaskCreate(adc_continuous_task, "adc_continuous_task", 60*1024, NULL, 3, &task_handle_adc); // configMAX_PRIORITIES
     // start_timer = esp_rtc_get_time_us();
 
     ///< ---------------------- SYSTEM -------------------
     gSys.STATE = NONE; ///< Initialize the state machine
-    gSys.actual_num_samples = 0; ///< Initialize the number of samples readed from the ADC
-    // gSys.start_adc_time = esp_timer_get_time();
+    gSys.current_bytes_written = 0; ///< Initialize the number of samples readed from the ADC
 
     // Get the partition table and erase the partition to store new data
     gSys.part = esp_partition_find_first(ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_DATA_FAT, "angle_pos");
     ESP_ERROR_CHECK(esp_flash_erase_region(gSys.part->flash_chip, gSys.part->address, gSys.part->size));
+    char part_label[] = "Time(us)\tAngle(deg)\tDuty\n";
+    esp_partition_write(gSys.part, 0, part_label, strlen(part_label));
+    gSys.current_bytes_written += strlen(part_label);
 
     // Create a one-shot timer to control the sequence
     const esp_timer_create_args_t oneshot_timer_args = {
@@ -266,11 +259,6 @@ bool adc_conv_done_cb(adc_continuous_handle_t handle, const adc_continuous_evt_d
     return (mustYield == pdTRUE);
 }
 
-bool adc_pool_overflow_cb(adc_continuous_handle_t handle, const adc_continuous_evt_data_t *edata, void *user_data)
-{
-    return true;
-}
-
 void adc_continuous_task(void *pvParameters)
 {
     while (1) {
@@ -282,8 +270,20 @@ void adc_continuous_task(void *pvParameters)
             esp_err_t ret = adc_continuous_read(gAs5600.adc_cont_handle, gAs5600.buffer, AS5600_ADC_READ_SIZE_BYTES, &gAs5600.ret_num, portMAX_DELAY);
             uint32_t ret_num = gAs5600.ret_num;
             if (ret == ESP_OK) {
+
                 ESP_LOGI(TAG_ADC_TASK, "ret is %x, ret_num is %d bytes, in time %d", ret, (int)ret_num, (int)(gSys.done_adc_time - gSys.start_adc_time));
                 gSys.start_adc_time = esp_rtc_get_time_us();
+
+                /*
+                 -  'data_frame' is a buffer to save the data readed from the ADC. The data is saved in a .txt file .
+                 -  See 'types.h' file for more details about python commands.
+                 -  20 is a right-minded of the number of characters (bytes) needed per data (per line in the .txt file), but
+                    in many cases, it will be less than 20.
+                */
+                char data_frame[(ret_num / SOC_ADC_DIGI_DATA_BYTES_PER_CONV)*20];
+                uint32_t cnt_bytes = 0;
+                static uint32_t time = 0;
+
                 for (int i = 0; i < ret_num; i += SOC_ADC_DIGI_RESULT_BYTES) {
                     adc_digi_output_data_t *p = (adc_digi_output_data_t*)&gAs5600.buffer[i];
                     uint32_t chan_num = p->type2.channel;
@@ -292,7 +292,24 @@ void adc_continuous_task(void *pvParameters)
                     if (!(chan_num < SOC_ADC_CHANNEL_NUM(AS5600_ADC_CONF_UNIT))) {
                         ESP_LOGW(TAG_ADC_TASK, "Invalid data [%d_%"PRIu32"_%"PRIx32"]", gAs5600.unit, chan_num, data);
                     }
+                    // Save the data in the data_frame array taking into account the time, angle and duty.
+                    time += AS5600_ADC_SAMPLE_PERIOD_US;
+                    uint16_t duty = gSys.duty_to_save;
+                    uint16_t angle = 0;
+                    as5600_adc_raw_to_angle(&gAs5600, data, &angle);
+
+                    uint8_t length = snprintf(NULL, 0, "%d\t\t%d\t\t%d\n", (int)time, (int)angle, (int)duty);
+                    char str[length + 1];
+                    snprintf(str, length + 1, "%d\t\t%d\t\t%d\n", (int)time, (int)angle, (int)duty);
+                    for(int j = 0; j < length; j++) { // copy the string to the data_frame array
+                        data_frame[cnt_bytes++] = str[j];
+                    }
                 }
+                // Write the data to the flash memory
+                esp_flash_write(gSys.part->flash_chip, data_frame, gSys.part->address + gSys.current_bytes_written, cnt_bytes);
+                gSys.current_bytes_written += cnt_bytes;
+                ESP_LOGI(TAG_ADC_TASK, "current_bytes_written: %d", (int)gSys.current_bytes_written);
+
             } else if (ret == ESP_ERR_TIMEOUT) {
                 //We try to read `EXAMPLE_READ_LEN` until API returns timeout, which means there's no available data
                 break;

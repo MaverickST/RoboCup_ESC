@@ -88,6 +88,7 @@ void as5600_init(as5600_t *as5600, i2c_port_t i2c_num, uint8_t scl, uint8_t sda,
         .bitwidth = AS5600_ADC_BIT_WIDTH,
     };
     esp_err_t ret = adc_cali_create_scheme_curve_fitting(&cali_config, &cali_handle);
+    as5600->is_calibrated = false;
     if (ret == ESP_OK) {
         as5600->is_calibrated = true;
         as5600->adc_cali_handle = cali_handle;
@@ -107,9 +108,9 @@ void as5600_adc_raw_to_angle(as5600_t *as5600, uint16_t raw, uint16_t *angle)
 {
     if (as5600->is_calibrated && as5600->conf.OUTS == AS5600_OUTPUT_STAGE_ANALOG_RR) {
         uint16_t voltage;
-        adc_cali_raw_to_voltage(as5600->adc_cali_handle, raw, &voltage);
-        voltage = LIMIT(voltage, VCC_3V3_MV/10, VCC_3V3_MV*9/10); // The OUT pin of the AS5600 sensor has a range of 10%-90% of VCC
-        *angle = MAP(voltage, VCC_3V3_MV/10, VCC_3V3_MV*9/10, 0, 360); // Map the voltage to the angle
+        adc_cali_raw_to_voltage(as5600->adc_cali_handle, raw, &voltage); ///
+        voltage = LIMIT(voltage, VCC_3V3_MIN_RR_MV, VCC_3V3_MAX_RR_MV); // The OUT pin of the AS5600 sensor has a range of 10%-90% of VCC
+        *angle = MAP(voltage, VCC_3V3_MIN_RR_MV, VCC_3V3_MAX_RR_MV, 0, 360); // Map the voltage to the angle
     }
     else {
         *angle = raw;

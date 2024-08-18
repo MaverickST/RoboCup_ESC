@@ -49,7 +49,9 @@
     "esp_log.h": "c",
     "nvs_flash.h": "c",
     "adc_continuous.h": "c",
-    "adc.h": "c"
+    "adc.h": "c",
+    "bitset": "c",
+    "string_view": "c"
   },
   "idf.openOcdConfigs": [
     "interface/ftdi/esp32_devkitj_v1.cfg",
