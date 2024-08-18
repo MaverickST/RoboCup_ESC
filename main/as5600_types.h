@@ -64,8 +64,8 @@ typedef enum
  */
 typedef enum
 {
-    AS5600_OUTPUT_STAGE_ANALOG_FR = 0x00, ///< Analog output 0%-100%
-    AS5600_OUTPUT_STAGE_ANALOG_RR = 0x01, ///< Analog output 10%-90%
+    AS5600_OUTPUT_STAGE_ANALOG_FR = 0x00, ///< Analog output 0%-100%, FULL RANGE
+    AS5600_OUTPUT_STAGE_ANALOG_RR = 0x01, ///< Analog output 10%-90%, REDUCED RANGE
     AS5600_OUTPUT_STAGE_DIGITAL_PWM = 0x02, ///< PWM output
     AS5600_OUTPUT_STAGE_COUNT = 0x03 ///< Number of output stages
 } as5600_output_stage_t;
