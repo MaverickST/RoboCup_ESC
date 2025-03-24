@@ -4,6 +4,7 @@
   "idf.flashType": "UART",
   "idf.adapterTargetName": "esp32s3",
   "files.associations": {
+    "*.h": "c",
     "gpio_led.h": "c",
     "esp_vfs_eventfd.h": "c",
     "mcpwm_prelude.h": "c",
@@ -51,7 +52,12 @@
     "adc_continuous.h": "c",
     "adc.h": "c",
     "bitset": "c",
-    "string_view": "c"
+    "string_view": "c",
+    "as5600.h": "c",
+    "freertos.h": "c",
+    "atomic": "c",
+    "compare": "c",
+    "cstdint": "c"
   },
   "idf.openOcdConfigs": [
     "interface/ftdi/esp32_devkitj_v1.cfg",
@@ -67,5 +73,6 @@
     "ESP_ROM_ELF_DIR": "C:\\Espressif\\tools\\esp-rom-elfs\\20230320/"
   },
   "idf.gitPathWin": "C:/Espressif/tools/idf-git/2.44.0/cmd/git.exe",
-  "C_Cpp.errorSquiggles": "enabled"
+  "C_Cpp.errorSquiggles": "enabled",
+  "idf.pythonInstallPath": "C:\\Espressif\\tools\\idf-python\\3.11.2\\python.exe"
 }

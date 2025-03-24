@@ -16,7 +16,7 @@
 #include "led.h"
 #include "uart_console.h"
 #include "bldc_pwm.h"
-#include "as5600.h"
+#include "as5600_lib.h"
 
 
 // -------------------------------------------------------------------------- 
@@ -53,7 +53,7 @@ volatile flags_t gFlag;
 led_rgb_t gLed;
 uart_console_t gUc;
 bldc_pwm_motor_t gMotor;
-as5600_t gAs5600;
+AS5600_t gAs5600;
 system_t gSys;
 
 // --------------------------------------------------------------------------
@@ -72,15 +72,6 @@ void init_system(void);
  * @param arg 
  */
 void sys_timer_cb(void *arg);
-
-/**
- * @brief Callback for the ADC continuous conversion
- * 
- * @param handle 
- * @param edata 
- * @param user_data 
- */
-bool adc_conv_done_cb(adc_continuous_handle_t handle, const adc_continuous_evt_data_t *edata, void *user_data);
 
 /**
  * @brief Proccess the command received from the UART console
@@ -124,10 +115,10 @@ void app_main(void)
     bldc_set_duty(&gMotor, 1); // Set duty to 0.1%, so the motor will not move
 
     ///< ---------------------- AS5600 -------------------
-    as5600_init(&gAs5600, I2C_MASTER_NUM, I2C_MASTER_SCL_GPIO, I2C_MASTER_SDA_GPIO, AS5600_OUT_GPIO);
+    AS5600_Init(&gAs5600, I2C_MASTER_NUM, I2C_MASTER_SCL_GPIO, I2C_MASTER_SDA_GPIO, AS5600_OUT_GPIO);
 
     // Set some configurations to the AS5600
-    as5600_config_t conf = {
+    AS5600_config_t conf = {
         .PM = AS5600_POWER_MODE_NOM, ///< Normal mode
         .HYST = AS5600_HYSTERESIS_OFF, ///< Hysteresis off
         .OUTS = AS5600_OUTPUT_STAGE_ANALOG_RR, ///< Analog output 10%-90%
@@ -136,7 +127,7 @@ void app_main(void)
         .FTH = AS5600_FF_THRESHOLD_SLOW_FILTER_ONLY, ///< Slow filter only
         .WD = AS5600_WATCHDOG_ON, ///< Watchdog on
     };
-    as5600_set_conf(&gAs5600, conf);
+    AS5600_SetConf(&gAs5600, conf);
 
     ///< ---------------------- SYSTEM -------------------
     // 'System' refers to more general variables and functions that are used to control the system, which
@@ -151,16 +142,6 @@ void app_main(void)
 
 void init_system(void)
 {
-    ///< ---------------------- ADC ----------------------
-    adc_continuous_evt_cbs_t cbs = {
-        .on_conv_done = adc_conv_done_cb,
-    };
-    ESP_ERROR_CHECK(adc_continuous_register_event_callbacks(gAs5600.adc_cont_handle, &cbs, NULL));
-
-    xTaskCreate(adc_continuous_task, "adc_continuous_task", 60*1024, NULL, 3, &task_handle_adc); // configMAX_PRIORITIES
-    // start_timer = esp_rtc_get_time_us();
-
-    ///< ---------------------- SYSTEM -------------------
     gSys.STATE = NONE; ///< Initialize the state machine
     gSys.current_bytes_written = 0; ///< Initialize the number of samples readed from the ADC
 
@@ -168,8 +149,16 @@ void init_system(void)
     gSys.part = esp_partition_find_first(ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_DATA_FAT, "angle_pos");
     ESP_ERROR_CHECK(esp_flash_erase_region(gSys.part->flash_chip, gSys.part->address, gSys.part->size));
     char part_label[] = "Time(us)\tAngle(deg)\tDuty\n";
-    esp_partition_write(gSys.part, 0, part_label, strlen(part_label));
+    esp_err_t rest = esp_partition_write(gSys.part, 0, part_label, strlen(part_label));
     gSys.current_bytes_written += strlen(part_label);
+
+    // Print the result of the operation
+    if (rest == ESP_OK) {
+        ESP_LOGI("init_system", "Text written successfully");
+    }
+    else {
+        ESP_LOGI("init_system", "Error writing text");
+    }
 
     // Create a one-shot timer to control the sequence
     const esp_timer_create_args_t oneshot_timer_args = {
@@ -207,7 +196,6 @@ void sys_timer_cb(void *arg)
             ESP_ERROR_CHECK(esp_timer_delete(gSys.oneshot_timer));
             gSys.STATE = SEQ_BLDC_1;
             bldc_set_duty(&gMotor, 65); ///< Set the duty cycle to 6.5%
-            as5600_adc_continuous_start(&gAs5600); ///< Start the ADC continuous conversion
             gSys.start_adc_time = esp_rtc_get_time_us();
             break;
 
@@ -215,111 +203,6 @@ void sys_timer_cb(void *arg)
             ESP_LOGI("sys_timer_cb", "default");
             break;
     }
-}
-
-bool adc_conv_done_cb(adc_continuous_handle_t handle, const adc_continuous_evt_data_t *edata, void *user_data)
-{
-    gSys.done_adc_time = esp_rtc_get_time_us();
-
-    switch(gSys.STATE)
-    {
-        case SEQ_BLDC_1:
-            bldc_set_duty(&gMotor, 75); ///< Set the duty cycle to 7.5%
-            gSys.STATE = SEQ_BLDC_2;
-            gSys.duty_to_save = 65;
-            break;
-
-        case SEQ_BLDC_2:
-            bldc_set_duty(&gMotor, 85); ///< Set the duty cycle to 8.5%
-            gSys.STATE = SEQ_BLDC_3;
-            gSys.duty_to_save = 75;
-            break;
-
-        case SEQ_BLDC_3:
-            bldc_set_duty(&gMotor, 1); ///< Stop the motor
-            gSys.STATE = SEQ_BLDC_LAST;
-            gSys.duty_to_save = 85;
-            break;
-
-        case SEQ_BLDC_LAST:
-            bldc_set_duty(&gMotor, 1); ///< Stop the motor
-            gSys.STATE = BLDC_STOP;
-            break;
-
-        default:
-            break;
-    }
-    BaseType_t mustYield = pdFALSE;
-    if (gSys.STATE != BLDC_STOP) {
-        vTaskNotifyGiveFromISR(task_handle_adc, &mustYield);
-    } else { // Stop the task and also de ADC conversion (but this last one currently is not implemented)
-        vTaskSuspend(task_handle_adc);
-    }
-
-    return (mustYield == pdTRUE);
-}
-
-void adc_continuous_task(void *pvParameters)
-{
-    while (1) {
-
-        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
-        // bldc_set_duty(&gMotor, 1); ///< Stop the motor to process the data
-
-        while (1) {
-            esp_err_t ret = adc_continuous_read(gAs5600.adc_cont_handle, gAs5600.buffer, AS5600_ADC_READ_SIZE_BYTES, &gAs5600.ret_num, portMAX_DELAY);
-            uint32_t ret_num = gAs5600.ret_num;
-            if (ret == ESP_OK) {
-
-                ESP_LOGI(TAG_ADC_TASK, "ret is %x, ret_num is %d bytes, in time %d", ret, (int)ret_num, (int)(gSys.done_adc_time - gSys.start_adc_time));
-                gSys.start_adc_time = esp_rtc_get_time_us();
-
-                /*
-                 -  'data_frame' is a buffer to save the data readed from the ADC. The data is saved in a .txt file .
-                 -  See 'types.h' file for more details about python commands.
-                 -  20 is a right-minded of the number of characters (bytes) needed per data (per line in the .txt file), but
-                    in many cases, it will be less than 20.
-                */
-                char data_frame[(ret_num / SOC_ADC_DIGI_DATA_BYTES_PER_CONV)*20];
-                uint32_t cnt_bytes = 0;
-                static uint32_t time = 0;
-
-                for (int i = 0; i < ret_num; i += SOC_ADC_DIGI_RESULT_BYTES) {
-                    adc_digi_output_data_t *p = (adc_digi_output_data_t*)&gAs5600.buffer[i];
-                    uint32_t chan_num = p->type2.channel;
-                    uint32_t data = p->type2.data;
-                    /* Check the channel number validation, the data is invalid if the channel num exceed the maximum channel */
-                    if (!(chan_num < SOC_ADC_CHANNEL_NUM(AS5600_ADC_CONF_UNIT))) {
-                        ESP_LOGW(TAG_ADC_TASK, "Invalid data [%d_%"PRIu32"_%"PRIx32"]", gAs5600.unit, chan_num, data);
-                    }
-                    // Save the data in the data_frame array taking into account the time, angle and duty.
-                    time += AS5600_ADC_SAMPLE_PERIOD_US;
-                    uint16_t duty = gSys.duty_to_save;
-                    uint16_t angle = 0;
-                    as5600_adc_raw_to_angle(&gAs5600, data, &angle);
-
-                    uint8_t length = snprintf(NULL, 0, "%d\t\t%d\t\t%d\n", (int)time, (int)angle, (int)duty);
-                    char str[length + 1];
-                    snprintf(str, length + 1, "%d\t\t%d\t\t%d\n", (int)time, (int)angle, (int)duty);
-                    for(int j = 0; j < length; j++) { // copy the string to the data_frame array
-                        data_frame[cnt_bytes++] = str[j];
-                    }
-                }
-                // Write the data to the flash memory
-                esp_flash_write(gSys.part->flash_chip, data_frame, gSys.part->address + gSys.current_bytes_written, cnt_bytes);
-                gSys.current_bytes_written += cnt_bytes;
-                ESP_LOGI(TAG_ADC_TASK, "current_bytes_written: %d", (int)gSys.current_bytes_written);
-
-            } else if (ret == ESP_ERR_TIMEOUT) {
-                //We try to read `EXAMPLE_READ_LEN` until API returns timeout, which means there's no available data
-                break;
-            }
-        }
-    }
-
-    ESP_ERROR_CHECK(adc_continuous_stop(gAs5600.adc_cont_handle));
-    ESP_ERROR_CHECK(adc_continuous_deinit(gAs5600.adc_cont_handle));
-    vTaskDelete(NULL);
 }
 
 void uart_event_task(void *pvParameters)
@@ -395,7 +278,7 @@ void process_cmd(const char *cmd)
         char reg[len_reg]; ///< 4 is the length of the register, +1 for the null terminator
         strncpy(reg, (const char *)gUc.data + strlen("as5 r "), len_reg); ///< Get the register after the command
         reg[len_reg] = '\0'; ///< Add the null terminator
-        as5600_reg_t addr = as5600_reg_str_to_addr(&gAs5600, reg); ///< Map the str to int address
+        AS5600_reg_t addr = AS5600_RegStrToAddr(&gAs5600, reg); ///< Map the str to int address
         if (addr == -1) {
             ESP_LOGI(TAG_CMD, "Invalid register");
             return;
@@ -405,7 +288,7 @@ void process_cmd(const char *cmd)
         uint16_t data;
         if (rw == 'r') {
             ESP_LOGI(TAG_CMD, "addr-> %02x", (uint8_t)addr);
-            as5600_read_reg(&gAs5600, addr, &data);
+            AS5600_ReadReg(&gAs5600, addr, &data);
             ESP_LOGI(TAG_CMD, "readed-> %04x", data);
         }
         ///< For write commands, it is necessary to get the value to write
@@ -433,7 +316,7 @@ void process_cmd(const char *cmd)
                     return;
                 }
             }
-            as5600_write_reg(&gAs5600, addr, value);
+            AS5600_WriteReg(&gAs5600, addr, value);
             ESP_LOGI(TAG_CMD, "addr-> %02x, value-> %04x", (uint8_t)addr, value);
         }
         else {
