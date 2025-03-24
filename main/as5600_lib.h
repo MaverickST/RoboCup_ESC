@@ -1,6 +1,6 @@
 /**
- * \file        as5600.h
- * \brief
+ * \file        as5600_lib.h
+ * \brief       AS5600 library
  * \details
  * 
  *          About the OUT pin in the AS5600 sensor:
@@ -13,7 +13,7 @@
  * 
  * \author      MaverickST
  * \version     0.0.3
- * \date        05/10/2023
+ * \date        05/10/2024
  * \copyright   Unlicensed
  */
 
@@ -24,15 +24,10 @@
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
-#include "esp_log.h"
-#include "esp_adc/adc_continuous.h"
-#include "driver/i2c_master.h"
-#include "esp_adc/adc_cali.h"
-#include "esp_adc/adc_cali_scheme.h"
+#include <stdio.h>
 
-#include "as5600_types.h"
-
-static const char* TAG_AS5600 = "AS5600";
+#include "as5600_defs.h"
+#include "platform_esp32s3.h"
 
 #define VCC_3V3_MV          3300        /*!< VCC in mV */
 #define VCC_3V3_MIN_RR_MV   330         /*!< VCC minimum range in mV -> 10% of VCC */
@@ -43,75 +38,60 @@ static const char* TAG_AS5600 = "AS5600";
 #define LIMIT(a, min, max) (a < min ? min : (a > max ? max : a)) /*!< Limit a value between min and max */
 
 #define I2C_MASTER_FREQ_HZ  400*1000    /*!< I2C master clock frequency */
-#define I2C_TIMEOUT_MS      100         /*!< I2C timeout in milliseconds */
-
 #define AS5600_SENSOR_ADDR  0x36        /*!< slave address for AS5600 sensor */
-
-#define AS5600_ADC_SAMPLE_FREQ_HZ      5000         /*!< ADC sample frequency in Hz */
-#define AS5600_ADC_SAMPLE_PERIOD_US    (1000000/AS5600_ADC_SAMPLE_FREQ_HZ) /*!< ADC sample period in microseconds */
-#define AS5600_SAMPLING_TIME_MS        512          /*!< Sampling time in milliseconds */
-#define AS5600_ADC_CONF_UNIT           ADC_UNIT_1   /*!< ADC unit for ADC1 */
-#define AS5600_ADC_RESOLUTION_12_BIT   4095         /*!< 12-bit resolution for ADC */  
-#define AS5600_ADC_READ_SIZE_BYTES     ((AS5600_ADC_SAMPLE_FREQ_HZ*AS5600_SAMPLING_TIME_MS)/1000)*SOC_ADC_DIGI_DATA_BYTES_PER_CONV   /*!< Read size in bytes */
-#define AS5600_ADC_MAX_BUF_SIZE        4*AS5600_ADC_READ_SIZE_BYTES                   /*!< Maximum buffer size for ADC */
-
-#define AS5600_ADC_CONV_MODE           ADC_CONV_SINGLE_UNIT_1
-#define AS5600_ADC_OUTPUT_TYPE         ADC_DIGI_OUTPUT_FORMAT_TYPE2
-#define AS5600_ADC_ATTEN               ADC_ATTEN_DB_12
-#define AS5600_ADC_BIT_WIDTH           SOC_ADC_DIGI_MAX_BITWIDTH
-#define AS5600_ADC_CHANNEL_COUNT       1
 
 typedef struct
 {
-    i2c_port_t i2c_num;
-    uint8_t scl;
-    uint8_t sda;
-    uint8_t out;
-    uint8_t buffer[AS5600_ADC_READ_SIZE_BYTES];
-    uint32_t ret_num;
-    adc_channel_t chan;
-    adc_unit_t unit;
-    bool is_calibrated;
-    as5600_config_t conf;
+    AS5600_config_t conf; ///< AS5600 configuration
+    AS5600_reg_t reg;
 
-    adc_cali_handle_t adc_cali_handle;
-    adc_continuous_handle_t adc_cont_handle;
+    // Peripheral handles
+    i2c_t i2c_handle;
+    adc_t adc_handle;
 
-    i2c_master_dev_handle_t dev_handle;
-    as5600_reg_t reg;
-
-} as5600_t;
+} AS5600_t;
 
 /**
  * @brief Initialize the I2C master driver
  * 
  * @param i2c_num I2C port number
  */
-void as5600_init(as5600_t *as5600, i2c_port_t i2c_num, uint8_t scl, uint8_t sda, uint8_t out);
+void AS5600_Init(AS5600_t *as5600, i2c_port_t i2c_num, uint8_t scl, uint8_t sda, uint8_t out);
 
 /**
  * @brief Deinitialize the I2C master driver
  * 
  */
-void as5600_deinit(as5600_t *as5600);
+void AS5600_Deinit(AS5600_t *as5600);
 
 /**
- * @brief Start the ADC conversion in continuous mode.
- * 
- * @param as5600 
- */
-static inline void as5600_adc_continuous_start(as5600_t *as5600)
-{
-    ESP_ERROR_CHECK(adc_continuous_start(as5600->adc_cont_handle));
-}
-
-/**
- * @brief Convert raw ADC raw value to angle in degrees by using the ADC calibration API.
+ * @brief Get angle in degrees from the AS5600 sensor by ADC.
  * Also take into account the range of the OUT pin of the AS5600 sensor, which is 10%-90% of VCC.
  * 
  * @param as5600 
  */
-void as5600_adc_raw_to_angle(as5600_t *as5600, uint16_t raw, uint16_t *angle);
+float AS5600_ADC_GetAngle(AS5600_t *as5600);
+
+/**
+ * @brief The host microcontroller can perform a permanent programming of ZPOS and MPOS with a BURN_ANGLE command.
+ * To perform a BURN_ANGLE command, write the value 0x80 into register 0xFF. 
+ * The BURN_ANGLE command can be executed up to 3 times
+ * ZMCO shows how many times ZPOS and MPOS have been permanently written. 
+ * This command may only be executed if the presence of the magnet is detected (MD = 1).
+ * 
+ * @param as5600 
+ */
+void AS5600_BurnAngleCommand(AS5600_t *as5600);
+
+/**
+ * @brief The host microcontroller can perform a permanent writing of MANG and CONFIG with a BURN_SETTING command. 
+ * To perform a BURN_SETTING command, write the value 0x40 into register 0xFF. 
+ * MANG can be written only if ZPOS and MPOS have never been permanently written (ZMCO = 00). 
+ * The BURN_ SETTING command can be performed only one time.
+ * 
+ * @param as5600 
+ */
+void AS5600_BurnSettingCommand(AS5600_t *as5600);
 
 /**
  * @brief Convert register string to register address
@@ -119,7 +99,7 @@ void as5600_adc_raw_to_angle(as5600_t *as5600, uint16_t raw, uint16_t *angle);
  * @param reg_str Register string
  * @return as5600_reg_t Register address
  */
-as5600_reg_t as5600_reg_str_to_addr(as5600_t *as5600, const char *reg_str);
+AS5600_reg_t AS5600_RegStrToAddr(AS5600_t *as5600, const char *reg_str);
 
 // -------------------------------------------------------------
 // ---------------------- I2C FUNCTIONS ------------------------
@@ -131,7 +111,7 @@ as5600_reg_t as5600_reg_str_to_addr(as5600_t *as5600, const char *reg_str);
  * @param reg Register address
  * @param data Pointer to the data
  */
-void as5600_read_reg(as5600_t *as5600, as5600_reg_t reg, uint16_t *data);
+void AS5600_ReadReg(AS5600_t *as5600, AS5600_reg_t reg, uint16_t *data);
 
 /**
  * @brief Write register
@@ -139,7 +119,7 @@ void as5600_read_reg(as5600_t *as5600, as5600_reg_t reg, uint16_t *data);
  * @param reg Register address
  * @param data Data to write
  */
-void as5600_write_reg(as5600_t *as5600, as5600_reg_t reg, uint16_t data);
+void AS5600_WriteReg(AS5600_t *as5600, AS5600_reg_t reg, uint16_t data);
 
 /**
  * @brief Check if the register is valid for reading
@@ -148,7 +128,7 @@ void as5600_write_reg(as5600_t *as5600, as5600_reg_t reg, uint16_t data);
  * @return true if the register is valid
  * @return false if the register is invalid
  */
-bool as5600_is_valid_read_reg(as5600_t *as5600, as5600_reg_t reg);
+bool AS5600_IsValidReadReg(AS5600_t *as5600, AS5600_reg_t reg);
 
 /**
  * @brief Check if the register is valid for writing
@@ -157,22 +137,7 @@ bool as5600_is_valid_read_reg(as5600_t *as5600, as5600_reg_t reg);
  * @return true if the register is valid
  * @return false if the register is invalid
  */
-bool as5600_is_valid_write_reg(as5600_t *as5600, as5600_reg_t reg);
-
-/**
- * @brief Transmit and receive data.
- * Send the register address to read from and receive the data.
- * _______________________________________________________________________________________________
- * | start | slave_addr + rd_bit +ack | write 1 bytes (reg) + ack | read size bytes + nack | stop |
- * --------|--------------------------|---------------------------|------------------------|------|
- * 
- * @param i2c_num 
- * @param reg 
- * @param data_rd 
- * @param size 
- * @return esp_err_t 
- */
-esp_err_t i2c_master_write_read(i2c_port_t i2c_num, uint8_t reg, uint8_t *data_rd, uint8_t size);
+bool AS5600_IsValidWriteReg(AS5600_t *as5600, AS5600_reg_t reg);
 
 // -------------------------------------------------------------
 // ---------------------- CONFIG REGISTERS ---------------------
@@ -183,56 +148,56 @@ esp_err_t i2c_master_write_read(i2c_port_t i2c_num, uint8_t reg, uint8_t *data_r
  * 
  * @param start_position 
  */
-void as5600_set_start_position(as5600_t *as5600, uint16_t start_position);
+void AS5600_SetStartPosition(AS5600_t *as5600, uint16_t start_position);
 
 /**
  * @brief Get the start position by reading the ZPOS register
  * 
  * @param start_position 
  */
-void as5600_get_start_position(as5600_t *as5600, uint16_t *start_position);
+void AS5600_GetStartPosition(AS5600_t *as5600, uint16_t *start_position);
 
 /**
  * @brief Set the stop position by writing the MPOS register
  * 
  * @param stop_position 
  */
-void as5600_set_stop_position(as5600_t *as5600, uint16_t stop_position);
+void AS5600_SetStopPosition(AS5600_t *as5600, uint16_t stop_position);
 
 /**
  * @brief Get the stop position by reading the MPOS register
  * 
  * @param stop_position 
  */
-void as5600_get_stop_position(as5600_t *as5600, uint16_t *stop_position);
+void AS5600_GetStopPosition(AS5600_t *as5600, uint16_t *stop_position);
 
 /**
  * @brief Set the maximum angle by writing the MANG register
  * 
  * @param max_angle 
  */
-void as5600_set_max_angle(as5600_t *as5600, uint16_t max_angle);
+void AS5600_SetMaxAngle(AS5600_t *as5600, uint16_t max_angle);
 
 /**
  * @brief Get the maximum angle by reading the MANG register
  * 
  * @param max_angle 
  */
-void as5600_get_max_angle(as5600_t *as5600, uint16_t *max_angle);
+void AS5600_GetMaxAngle(AS5600_t *as5600, uint16_t *max_angle);
 
 /**
  * @brief Set the configuration by writing the CONF register
  * 
  * @param conf Configuration
  */
-void as5600_set_conf(as5600_t *as5600, as5600_config_t conf);
+void AS5600_SetConf(AS5600_t *as5600, AS5600_config_t conf);
 
 /**
  * @brief Get the configuration by reading the CONF register
  * 
  * @param conf Configuration
  */
-void as5600_get_conf(as5600_t *as5600, as5600_config_t *conf);
+void AS5600_GetConf(AS5600_t *as5600, AS5600_config_t *conf);
 
 
 // -------------------------------------------------------------
@@ -245,7 +210,7 @@ void as5600_get_conf(as5600_t *as5600, as5600_config_t *conf);
  * @param reg buffer to store the register value
  * @param data Pointer to the data
  */
-void as5600_get_raw_angle(as5600_t *as5600, uint16_t *raw_angle);
+void AS5600_GetRawAngle(AS5600_t *as5600, uint16_t *raw_angle);
 
 /**
  * @brief Read ANGLE register
@@ -253,8 +218,7 @@ void as5600_get_raw_angle(as5600_t *as5600, uint16_t *raw_angle);
  * @param reg buffer to store the register value
  * @param data Pointer to the data
  */
-void as5600_get_angle(as5600_t *as5600, uint16_t *angle);
-
+void AS5600_GetAngle(AS5600_t *as5600, uint16_t *angle);
 
 // -------------------------------------------------------------
 // ---------------------- STATUS REGISTERS ---------------------
@@ -266,7 +230,7 @@ void as5600_get_angle(as5600_t *as5600, uint16_t *angle);
  * @param reg buffer to store the register value
  * @param data Pointer to the data
  */
-void as5600_get_status(as5600_t *as5600, uint8_t *status);
+void AS5600_GetStatus(AS5600_t *as5600, uint8_t *status);
 
 /**
  * @brief Read AGC register
@@ -274,7 +238,7 @@ void as5600_get_status(as5600_t *as5600, uint8_t *status);
  * @param reg buffer to store the register value
  * @param data Pointer to the data
  */
-void as5600_get_agc(as5600_t *as5600, uint8_t *agc);
+void AS5600_GetAgc(AS5600_t *as5600, uint8_t *agc);
 
 /**
  * @brief Read MAGNITUDE register
@@ -282,7 +246,7 @@ void as5600_get_agc(as5600_t *as5600, uint8_t *agc);
  * @param reg buffer to store the register value
  * @param data Pointer to the data
  */
-void as5600_get_magnitude(as5600_t *as5600, uint16_t *magnitude);
+void AS5600_GetMagnitude(AS5600_t *as5600, uint16_t *magnitude);
 
 
 #endif // __AS5600_H__
